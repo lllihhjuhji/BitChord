@@ -117,6 +117,7 @@ object SourceRegistry {
         // disabled source, the next launch would otherwise believe the forced
         // opt-out had already happened and silently restore the old on state.
         publish(after, persist = false)
+        LastBabeRefresher.start()
         if (after != stored || !jioOptInMigrationDone) {
             prefs.edit()
                 .putString(KEY_SOURCES, json.encodeToString(ListSerializer(SourceConfig.serializer()), after))
