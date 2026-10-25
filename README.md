@@ -30,7 +30,12 @@
 
 > [!IMPORTANT]
 > BitChord is not affiliated with, endorsed by, or connected to YouTube or Google in any way. Use it at your own discretion.
-
+> [!NOTE]
+> This is an unofficial fork of [kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord), licensed under GPL-3.0. All credit for the original app goes to its author and contributors.
+>
+> Changes in this fork:
+> - Added Korean (한국어) translation and language option
+> - Removed the automatic update popup on launch (the update icon in the top bar is still available)
 ---
 
 <div align="center">
