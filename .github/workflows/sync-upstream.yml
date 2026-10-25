@@ -1,7 +1,7 @@
 name: Sync upstream
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -21,9 +21,10 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/kushagrasinghx/BitChord.git
           git fetch upstream
-          BEFORE=$(git rev-parse HEAD)
+          if [ "$(git rev-list --count HEAD..upstream/main)" = "0" ]; then
+            echo "No new upstream commits"
+            exit 0
+          fi
           git merge upstream/main --no-edit
           git push origin HEAD
-          if [ "$BEFORE" != "$(git rev-parse HEAD)" ]; then
-            gh workflow run android.yml --repo "${{ github.repository }}"
-          fi
+          gh workflow run android.yml --repo "${{ github.repository }}"
