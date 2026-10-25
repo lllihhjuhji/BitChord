@@ -46,7 +46,7 @@ jobs:
         run: ./gradlew testDevDebugUnitTest
 
       - name: Build the dev APK
-        run: ./gradlew assembleDevDebug
+        run: ./gradlew assembleDevDebug --stacktrace
 
       - name: Upload the dev APK
         uses: actions/upload-artifact@v4
