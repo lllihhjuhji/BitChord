@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-prod-release:
     runs-on: ubuntu-latest
@@ -54,3 +57,14 @@ jobs:
       with:
         name: bitchord-wear-prod-release-signed
         path: wearos/build/outputs/apk/prod/release/*.apk
+
+    - name: Publish GitHub Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        TAG="build-${{ github.run_number }}"
+        gh release create "$TAG" app/build/outputs/apk/prod/release/*.apk \
+          --repo "${{ github.repository }}" \
+          --title "BitChord $TAG" \
+          --notes "Auto-built from ${{ github.sha }}" \
+          --latest
