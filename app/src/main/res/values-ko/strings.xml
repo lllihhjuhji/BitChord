@@ -1141,4 +1141,5 @@
     <string name="wear_os_code_hint">페어링 코드</string>
     <string name="wear_os_done">완료</string>
     <string name="signed_by">서명: %1$s</string>
+    <string name="korean">한국어</string>
 </resources>
