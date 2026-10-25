@@ -5584,6 +5584,33 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private val sizedKbpsCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val sizingKbps: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private fun sizedStreamKbps(player: Player): Int? {
+        val uri = player.currentMediaItem?.localConfiguration?.uri ?: return null
+        val key = uri.toString()
+        sizedKbpsCache[key]?.let { return it }
+        val durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return null
+        if (sizingKbps.add(key)) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = AudioCache.contentLengthOf(uri)
+                    if (bytes > 0) {
+                        val kbps = (bytes * 8 / durationMs).toInt()
+                        if (kbps > 0) {
+                            sizedKbpsCache[key] = kbps
+                            withContext(Dispatchers.Main) { publishNerdStats() }
+                        }
+                    }
+                } finally {
+                    sizingKbps.remove(key)
+                }
+            }
+        }
+        return null
+    }
+
     private fun publishNerdStats() {
         val player = player ?: return
         val format = player.audioFormat
@@ -5609,7 +5636,9 @@ class PlaybackService : MediaLibraryService() {
                 Pair(localBitrateCache[mediaId], TelemetryProvenance.AUTHORITATIVE)
             NerdStats.declaredFormat(mediaId)?.kbps != null ->
                 Pair(NerdStats.declaredFormat(mediaId)?.kbps, TelemetryProvenance.AUTHORITATIVE)
-            NerdStats.pickedBitrateKbps(mediaId) != null ->
+            isLossless && sizedStreamKbps(player) != null ->
+                Pair(sizedStreamKbps(player), TelemetryProvenance.DERIVED)
+            !isLossless && NerdStats.pickedBitrateKbps(mediaId) != null ->
                 Pair(NerdStats.pickedBitrateKbps(mediaId), TelemetryProvenance.AUTHORITATIVE)
             dsd == null && isRawPcm && pcmDataRate != null ->
                 Pair(pcmDataRate, TelemetryProvenance.DERIVED)
