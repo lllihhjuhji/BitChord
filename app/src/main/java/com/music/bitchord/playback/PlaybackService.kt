@@ -5613,6 +5613,8 @@ class PlaybackService : MediaLibraryService() {
                 Pair(NerdStats.pickedBitrateKbps(mediaId), TelemetryProvenance.AUTHORITATIVE)
             dsd == null && isRawPcm && pcmDataRate != null ->
                 Pair(pcmDataRate, TelemetryProvenance.DERIVED)
+            dsd == null && isLossless && pcmDataRate != null ->
+                Pair(pcmDataRate, TelemetryProvenance.DERIVED)
             else ->
                 Pair(null, TelemetryProvenance.UNKNOWN)
         }
