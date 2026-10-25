@@ -65,7 +65,7 @@ object LastBabeRefresher {
     private fun secondsLeft(config: SourceConfig, nowSec: Long): Long? =
         expiryRegex.find(config.baseUrl)?.groupValues?.get(1)?.toLongOrNull()?.minus(nowSec)
 
-    private suspend fun refreshIfDue() {
+    suspend fun refreshIfDue() {
         val nowSec = System.currentTimeMillis() / 1000
         val due = SourceRegistry.configs.value.any { cfg ->
             cfg.isLastBabe() && (secondsLeft(cfg, nowSec) ?: Long.MAX_VALUE) < REFRESH_WINDOW_SEC
