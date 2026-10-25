@@ -31,8 +31,10 @@
 > [!IMPORTANT]
 > BitChord is not affiliated with, endorsed by, or connected to YouTube or Google in any way. Use it at your own discretion.
 
+
 > [!NOTE]
 > This is an unofficial fork of [kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord) (GPL-3.0). Modified with Korean translation and a few other tweaks. All credit for the original app goes to its author and contributors.
+
 > ---
 
 <div align="center">
