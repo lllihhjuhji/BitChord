@@ -35,9 +35,9 @@ def call(system, user):
     for m in MODELS:
         req = urllib.request.Request(
             f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
-            data=body, headers={"content-type": "application/json", "x-goog-api-key": key})
+            data=json.dumps({**json.loads(body), **({"generationConfig": {"responseMimeType": "application/json", "temperature": 0.2, "thinkingConfig": {"thinkingBudget": 0}}} if m == MODELS[0] else {})}).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
         try:
-            r = json.load(urllib.request.urlopen(req, timeout=300))
+            r = json.load(urllib.request.urlopen(req, timeout=90))
             return r["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:
             last = e
