@@ -1,0 +1,33 @@
+name: sync-and-translate
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT || github.token }}
+      - name: setup
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git remote add upstream https://github.com/kushagrasinghx/BitChord.git
+          git fetch upstream --no-tags
+      - name: merge upstream
+        run: git merge upstream/main --no-edit
+      - name: translate
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python3 tools/translate_ko.py
+      - name: push
+        run: |
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: ko translation"
+          git push origin main
