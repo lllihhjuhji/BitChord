@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, re, sys, json, hashlib, pathlib, urllib.request
+import time, os, re, sys, json, hashlib, pathlib, urllib.request
 import xml.etree.ElementTree as ET
 
 MODELS = ["gemini-2.5-flash", "gemini-flash-latest"]
@@ -50,7 +50,8 @@ def translate_chunk(todo, ref):
              "문체는 친근한 해요체(~해요, ~돼요, ~하세요)로 통일하고 간결하게. "
              "Queue, Wi-Fi, Dolby Atmos, YouTube Music, Spotify, Discord, Last.fm, BitChord 같은 고유명사/기술용어는 번역하지 말고 영어 그대로. "
              "아래 existing의 용어와 말투를 그대로 따를 것. 반드시 {키: 번역} JSON만 출력.")
-    for _ in range(3):
+    for attempt in range(6):
+        if attempt: time.sleep(min(15 * 2 ** (attempt - 1), 120))
         try:
             text = call(sys_p, json.dumps({"existing": ref, "translate": todo}, ensure_ascii=False))
             out = json.loads(re.sub(r"^```(?:json)?|```$", "", text.strip()).strip())
