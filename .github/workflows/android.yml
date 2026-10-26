@@ -1,12 +1,14 @@
 name: Android Release APK
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
 
 jobs:
   build-prod-release:
