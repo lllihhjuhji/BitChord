@@ -1137,4 +1137,9 @@
     <string name="signed_by">서명: %1$s</string>
     <string name="korean">한국어</string>
     <string name="app_name">BitChord</string>
+    <string name="crossfade_subtitle">한 곡에서 다음 곡으로 자연스럽게 이어져요</string>
+    <string name="skip_silence_subtitle">1초보다 긴 무음 구간을 잘라내요</string>
+    <string name="equalizer_tone">음색</string>
+    <string name="equalizer_balance">밸런스</string>
+    <string name="sleep_timer">수면 타이머</string>
 </resources>
