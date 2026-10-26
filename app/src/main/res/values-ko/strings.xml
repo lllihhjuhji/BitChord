@@ -243,7 +243,6 @@
     <string name="in_use">사용 중</string>
     <string name="blocking">차단 중</string>
     <string name="crossfade">크로스페이드</string>
-    <string name="crossfade_subtitle">한 곡을 다음 곡과 부드럽게 이어줘요</string>
     <string name="automix">오토믹스 [BETA]</string>
     <string name="automix_performance">오토믹스 성능</string>
     <string name="automix_performance_subtitle">백그라운드 분석에 사용할 CPU 양을 설정해요</string>
@@ -255,7 +254,6 @@
     <string name="automix_mode_performance">성능</string>
     <string name="automix_mode_performance_subtitle">스레드 4개 · 가장 빠른 분석 · 발열과 배터리 사용량 증가</string>
     <string name="skip_silence">무음 건너뛰기</string>
-    <string name="skip_silence_subtitle">1초보다 긴 무음 구간을 잘라내요</string>
     <string name="skip_silence_float_subtitle">32비트 float 출력에서는 사용할 수 없어요</string>
     <string name="prefer_music_only">음악 전용 버전 우선</string>
     <string name="prefer_music_only_subtitle">뮤직비디오는 카탈로그 오디오 버전을 찾아 불러오는 동안 비디오 정보를 보여줘요</string>
@@ -266,7 +264,6 @@
     <string name="equalizer_footer">BitChord 안에서 소리를 조정하며, 시스템으로 전달되기 전에 적용돼요.</string>
     <string name="equalizer_dynamic">다이내믹</string>
     <string name="equalizer_manual">수동</string>
-    <string name="equalizer_tone">톤</string>
     <string name="equalizer_tilt">기울기</string>
     <string name="equalizer_contour">윤곽</string>
     <string name="equalizer_broad">넓게</string>
@@ -277,7 +274,6 @@
     <string name="equalizer_bands">밴드</string>
     <string name="equalizer_bands_footer">밴드를 움직이면 프리셋에서 벗어나 직접 만든 곡선이 돼요.</string>
     <string name="equalizer_reset">모든 밴드 초기화</string>
-    <string name="equalizer_balance">밸런스</string>
     <string name="equalizer_balance_left">L</string>
     <string name="equalizer_balance_right">R</string>
     <string name="equalizer_balance_footer">한쪽 소리를 줄여서 소리를 반대쪽 귀로 치우치게 해요.</string>
@@ -620,7 +616,6 @@
     <string name="show_what_playing">재생 중인 곡 표시</string>
     <string name="signed_in_as">%1$s 계정으로 로그인됨</string>
     <string name="signing_in">로그인하는 중…</string>
-    <string name="sleep_timer">수면 타이머</string>
     <string name="sources_no_lossless">무손실 오디오를 제공할 수 있는 소스가 켜져 있지 않아요. 애드온을 추가하면 변환 없이 무손실 파일을 재생할 수 있어요.</string>
     <string name="sources_order_footer">소스에 트랙이 없거나 연결할 수 없으면 BitChord가 다음 소스를 시도해요. YouTube보다 위에 있는 소스는 더 나은 버전을 찾으면 YouTube의 녹음본을 대체할 수 있어요.</string>
     <string name="sources_order_header">소스 (이 순서대로 시도)</string>
