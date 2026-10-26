@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: ko-translate
   cancel-in-progress: false
@@ -22,8 +23,21 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python3 tools/translate_ko.py
       - name: push
+        id: push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet || { git commit -m "chore: ko translation" && git pull --rebase origin main && git push origin main; }
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore: ko translation"
+            git pull --rebase origin main
+            git push origin main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: trigger release build
+        if: steps.push.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run android.yml --ref main
