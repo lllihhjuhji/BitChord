@@ -47,7 +47,9 @@ def call(system, user):
 def translate_chunk(todo, ref):
     sys_p = ("Android 음악 앱 UI 문자열을 자연스러운 한국어로 번역. "
              "%s %d %1$s {x} \\n \\' &amp; 등 플레이스홀더/이스케이프는 원문 그대로 유지. "
-             "아래 existing의 용어를 따를 것. 반드시 {키: 번역} JSON만 출력.")
+             "문체는 친근한 해요체(~해요, ~돼요, ~하세요)로 통일하고 간결하게. "
+             "Queue, Wi-Fi, Dolby Atmos, YouTube Music, Spotify, Discord, Last.fm, BitChord 같은 고유명사/기술용어는 번역하지 말고 영어 그대로. "
+             "아래 existing의 용어와 말투를 그대로 따를 것. 반드시 {키: 번역} JSON만 출력.")
     for _ in range(3):
         try:
             text = call(sys_p, json.dumps({"existing": ref, "translate": todo}, ensure_ascii=False))
@@ -72,7 +74,7 @@ for ko_path in ROOT.rglob("values-ko/strings.xml"):
     todo = {k: v for k, v in en.items()
             if k not in ko or state.get(sk, {}).get(k, h(v)) != h(v)}
     if todo:
-        ref = dict(list(ko.items())[:80])
+        ref = dict(list(ko.items())[::4][:200])
         items, out = list(todo.items()), {}
         for i in range(0, len(items), CHUNK):
             out.update(translate_chunk(dict(items[i:i + CHUNK]), ref))
