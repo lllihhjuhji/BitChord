@@ -25,24 +25,14 @@ def fix(v):
     return v
 
 def call(system, user):
-    key = os.environ["GEMINI_API_KEY"]
-    body = json.dumps({
-        "systemInstruction": {"parts": [{"text": system}]},
-        "contents": [{"parts": [{"text": user}]}],
-        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.2},
-    }).encode()
-    last = None
-    for m in MODELS:
-        req = urllib.request.Request(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
-            data=json.dumps({**json.loads(body), **({"generationConfig": {"responseMimeType": "application/json", "temperature": 0.2, "thinkingConfig": {"thinkingBudget": 0}}} if m == MODELS[0] else {})}).encode(), headers={"content-type": "application/json", "x-goog-api-key": key})
-        try:
-            r = json.load(urllib.request.urlopen(req, timeout=90))
-            return r["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception as e:
-            last = e
-            print(f"{m} 실패: {type(e).__name__}")
-    raise last
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=json.dumps({"model": "claude-sonnet-5-5", "max_tokens": 8000, "system": system,
+                         "messages": [{"role": "user", "content": user}]}).encode(),
+        headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                 "anthropic-version": "2023-06-01",
+                 "content-type": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=120))["content"][0]["text"]
 
 def translate_chunk(todo, ref):
     sys_p = ("Android 음악 앱 UI 문자열을 자연스러운 한국어로 번역. "
