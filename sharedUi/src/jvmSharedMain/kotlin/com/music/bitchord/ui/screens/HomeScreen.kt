@@ -142,6 +142,8 @@ fun HomeScreen(
     leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
+    onDiscoverMix: (() -> Unit)? = null,
+    discoverLoading: Boolean = false,
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
 
@@ -171,6 +173,21 @@ fun HomeScreen(
             if (!signedIn && onSignIn != null) {
                 item {
                     SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
+                }
+            }
+            if (onDiscoverMix != null && state is UiState.Success) {
+                item(key = "discover_mix") {
+                    Column(Modifier.padding(bottom = 26.dp)) {
+                        SectionHeader("발견 믹스", "처음 듣는 곡 위주")
+                        androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = PAGE_GUTTER)) {
+                            NewShelfCard(
+                                icon = androidx.compose.material.icons.Icons.Rounded.PlayArrow,
+                                label = "발견 믹스",
+                                subtitle = if (discoverLoading) "만드는 중…" else "탭해서 재생",
+                                onClick = { if (!discoverLoading) onDiscoverMix() },
+                            )
+                        }
+                    }
                 }
             }
             when (state) {

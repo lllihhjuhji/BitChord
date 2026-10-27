@@ -974,6 +974,8 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        private var affinityPrev: MediaItem? = null
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // The player this fired on, which is by definition the one the
             // session is currently pointed at.
@@ -998,6 +1000,23 @@ class PlaybackService : MediaLibraryService() {
             // A receiver, if it is the speaker, is put on whatever became
             // current — or it is the one that moved, and this is the phone
             // catching up, which [CastPlayback] tells apart by track.
+            run {
+                val prev = affinityPrev
+                affinityPrev = mediaItem
+                val prevArtist = prev?.mediaMetadata?.artist?.toString()
+                if (prev != null && !prevArtist.isNullOrBlank() &&
+                    prev.mediaId != mediaItem?.mediaId &&
+                    (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                        reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+                ) {
+                    com.music.bitchord.data.ArtistAffinity.onTrackEnded(
+                        prevArtist,
+                        lastPositionSeconds.toLong(),
+                        0L,
+                        reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
+                    )
+                }
+            }
             speakers.onLocalTransition(mediaItem, reason)
 
             // No crossfade case to allow for here any more. A blended advance
