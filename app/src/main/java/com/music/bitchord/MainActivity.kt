@@ -1461,6 +1461,7 @@ private fun BitChordApp(
      * remixes of the same song. Album, artist and playlist pages keep [play],
      * where the surrounding list *is* the thing the user asked for.
      */
+    var discoverLoading by remember { mutableStateOf(false) }
     val playRadio: (Song, QueueSource) -> Unit = { song, source ->
         playRequestGeneration++
         activeRadioSeed = null
@@ -3081,6 +3082,27 @@ private fun BitChordApp(
                                 onLoadMore = viewModel::loadMoreHome,
                                 loadingMore = homeLoadingMore,
                                 recentlyPlayedLoading = homeRecentlyPlayedLoading,
+                                onDiscoverMix = {
+                                    scope.launch {
+                                        discoverLoading = true
+                                        val mix = com.music.bitchord.data.YtMusicRepository.discoverMix().getOrNull()
+                                        discoverLoading = false
+                                        val c = controller
+                                        if (!mix.isNullOrEmpty() && c != null && !refusedByHost()) {
+                                            playRequestGeneration++
+                                            c.playSongs(
+                                                mix.map {
+                                                    it.copy(
+                                                        playbackSource = "발견 믹스",
+                                                        playbackSourceType = PlaybackSourceType.HOME,
+                                                    )
+                                                },
+                                                0,
+                                            )
+                                        }
+                                    }
+                                },
+                                discoverLoading = discoverLoading,
                             )
                             TAB_EXPLORE -> selectedMoodGenre?.let { category ->
                                 MoodGenrePlaylistsScreen(
