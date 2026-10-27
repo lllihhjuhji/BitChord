@@ -181,7 +181,7 @@ fun HomeScreen(
                         SectionHeader("발견 믹스", "처음 듣는 곡 위주")
                         androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = PAGE_GUTTER)) {
                             NewShelfCard(
-                                icon = androidx.compose.material.icons.Icons.Rounded.PlayArrow,
+                                icon = Icons.Rounded.Cached,
                                 label = "발견 믹스",
                                 subtitle = if (discoverLoading) "만드는 중…" else "탭해서 재생",
                                 onClick = { if (!discoverLoading) onDiscoverMix() },
