@@ -782,6 +782,9 @@ object AppSettings {
      */
     fun init(context: Context, authStore: AuthStore) {
         prefs = context.getSharedPreferences("bitchord_settings", Context.MODE_PRIVATE)
+        com.music.bitchord.data.ArtistAffinity.attach(prefs.getString("artist_affinity", "").orEmpty()) {
+            prefs.edit().putString("artist_affinity", it).apply()
+        }
         this.authStore = authStore
         com.music.bitchord.data.spotify.LocalPlaylistStore.init(context)
         readAll()

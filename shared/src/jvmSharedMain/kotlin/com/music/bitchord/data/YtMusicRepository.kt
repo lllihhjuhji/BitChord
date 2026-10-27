@@ -1,5 +1,6 @@
 package com.music.bitchord.data
 
+import kotlin.random.Random
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.innertube.Innertube
 import com.music.bitchord.data.innertube.InnertubeParser
@@ -246,6 +247,156 @@ object YtMusicRepository {
         // 5. Fallback if everything was filtered out
         allHomeTrackSongs.ifEmpty { exploreSongs }
     }
+
+    /**
+     * Discovery mix: tracks the account has not played, from artists it does not
+     * already lean on, ranked by how it has treated each artist before
+     * ([ArtistAffinity]) and widened with artists related to the ones it plays most.
+     * A few familiar tracks are folded in so the queue does not feel foreign.
+     */
+    suspend fun discoverMix(
+        size: Int = 40,
+        familiarRatio: Float = 0.3f,
+        maxPerArtist: Int = 2,
+        heavyArtistPlays: Int = 3,
+        seedArtists: Int = 5,
+        relatedPerSeed: Int = 3,
+        excludeSongIds: Set<String> = emptySet(),
+    ): Result<List<Song>> = call("discoverMix") {
+        val dislikeLimit = -3f
+
+        val history = if (Innertube.cookie != null) {
+            runCatching { fetchHistory() }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        val playedIds = history.mapTo(HashSet()) { it.videoId }.apply { addAll(excludeSongIds) }
+        val heavyArtists = history
+            .groupingBy { ArtistAffinity.key(it.artist) }
+            .eachCount()
+            .filterValues { it >= heavyArtistPlays }
+            .keys
+        val seedIds = history
+            .mapNotNull { it.artistId }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(seedArtists)
+            .map { it.key }
+        val seedSet = seedIds.toSet()
+
+        val gathered = coroutineScope {
+            val home = async { runCatching { shelvesOf("FEmusic_home") }.getOrDefault(emptyList()) }
+            val explore = async { runCatching { shelvesOf("FEmusic_explore") }.getOrDefault(emptyList()) }
+            val fresh = async { runCatching { shelvesOf("FEmusic_new_releases") }.getOrDefault(emptyList()) }
+            val related = async {
+                runCatching { relatedSongs(seedIds, seedSet, relatedPerSeed) }.getOrDefault(emptyList())
+            }
+            discoverySongs(home.await(), 1.5f) +
+                discoverySongs(explore.await(), 0.5f) +
+                discoverySongs(fresh.await(), 0f) +
+                related.await().map { it to 1.0f }
+        }
+
+        val candidates = gathered
+            .distinctBy { it.first.videoId }
+            .filter { it.first.videoId !in playedIds }
+            .filter { ArtistAffinity.score(it.first.artist) > dislikeLimit }
+
+        // Score once per song: a random key inside the comparator breaks sorting.
+        fun rank(pool: List<Pair<Song, Float>>): List<Song> =
+            pool.map { (s, w) -> s to (w + ArtistAffinity.score(s.artist) + Random.nextFloat() * 2f) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+
+        val familiarCount = if (history.size > 5) (size * familiarRatio).toInt() else 0
+        val discoveryTarget = size - familiarCount
+
+        val strict = rank(
+            candidates.filter { (s, _) ->
+                ArtistAffinity.key(s.artist) !in heavyArtists && (s.artistId ?: "") !in seedSet
+            },
+        )
+        val relaxed = rank(candidates) // fallback when strict runs dry
+
+        val discovery = ArrayList<Song>()
+        val perArtist = HashMap<String, Int>()
+        val seen = HashSet<String>()
+        for (s in strict + relaxed) {
+            if (discovery.size >= discoveryTarget) break
+            val key = s.artistId ?: ArtistAffinity.key(s.artist)
+            val n = perArtist[key] ?: 0
+            if (n >= maxPerArtist) continue
+            if (!seen.add(s.videoId)) continue
+            perArtist[key] = n + 1
+            discovery += s
+        }
+
+        // Skip the newest few so the track that is playing right now isn't replayed.
+        val familiar = history.drop(5).shuffled().take(familiarCount)
+        val step = if (familiar.isEmpty()) Int.MAX_VALUE
+        else (discovery.size / (familiar.size + 1)).coerceAtLeast(1)
+
+        val out = ArrayList<Song>(size)
+        val familiarIt = familiar.iterator()
+        discovery.forEachIndexed { i, s ->
+            out += s
+            if ((i + 1) % step == 0 && familiarIt.hasNext()) out += familiarIt.next()
+        }
+        while (familiarIt.hasNext()) out += familiarIt.next()
+        out.distinctBy { it.videoId }
+    }
+
+    /** Top songs of artists related to [seedIds], skipping the seeds themselves. */
+    private suspend fun relatedSongs(
+        seedIds: List<String>,
+        seedSet: Set<String>,
+        perSeed: Int,
+    ): List<Song> = coroutineScope {
+        val relatedIds = seedIds
+            .map { id -> async { artistPage(id).getOrNull() } }
+            .awaitAll()
+            .flatMap { page -> page?.let { relatedArtistIds(it) }.orEmpty().shuffled().take(perSeed) }
+            .distinct()
+            .filter { it !in seedSet }
+        relatedIds
+            .map { id -> async { artistPage(id).getOrNull()?.songs.orEmpty().take(4) } }
+            .awaitAll()
+            .flatten()
+    }
+
+    /**
+     * Artist cards on an artist page ("Fans might also like"): a shelf made only of
+     * channel-id browse targets with no track in it. Language-independent.
+     */
+    private fun relatedArtistIds(page: ArtistPage): List<String> =
+        page.sections
+            .filter { shelf ->
+                shelf.items.isNotEmpty() &&
+                    shelf.items.all { it.videoId == null && it.browseId?.startsWith("UC") == true }
+            }
+            .flatMap { shelf -> shelf.items.mapNotNull { it.browseId } }
+
+    private fun discoverySongs(shelves: List<HomeShelf>, weight: Float): List<Pair<Song, Float>> =
+        shelves
+            .filterNot {
+                it.title.contains("recent", ignoreCase = true) ||
+                    it.title.contains("history", ignoreCase = true) ||
+                    it.title.contains("listen again", ignoreCase = true)
+            }
+            .flatMap { shelf ->
+                shelf.items.mapNotNull { item ->
+                    item.videoId?.let { vid ->
+                        Song(
+                            videoId = vid,
+                            title = item.title,
+                            artist = InnertubeParser.artistFromSubtitle(item.subtitle),
+                            thumbnailUrl = item.thumbnailUrl,
+                        ) to weight
+                    }
+                }
+            }
 
     private const val HISTORY = "FEmusic_history"
     private const val RECENT_TITLE = "Recents"
