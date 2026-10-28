@@ -102,7 +102,13 @@ suspend fun loadAutoplayTracks(
     limit: Int = MAX_QUEUED_AUTOPLAY,
 ): Result<List<Song>> {
     val seed = youtubeSeedFor(seedSong) ?: return Result.success(emptyList())
-    val related = YtMusicRepository.radio(seed).getOrElse { return Result.failure(it) }
+    // Korean seed: leave the station alone. Anything else gets a JP-region
+    // station with Hangul tracks removed (the app locale is ko, so the plain
+    // request drifts to old Korean songs).
+    val koreanSeed = hasHangul(seedSong.toString())
+    val related = YtMusicRepository.radio(seed, if (koreanSeed) null else RADIO_REGION)
+        .getOrElse { return Result.failure(it) }
+        .let { list -> if (koreanSeed) list else list.filterNot { hasHangul(it.toString()) } }
     val extra = QueueBuilder.extend(existing, related, limit)
     if (extra.isEmpty()) return Result.success(emptyList())
 
@@ -115,3 +121,10 @@ suspend fun loadAutoplayTracks(
         ).asQueueEntry(QueueTier.AUTOPLAY)
     })
 }
+
+
+private const val RADIO_REGION = "JP"
+
+private val HANGUL = Regex("[\\u1100-\\u11FF\\u3130-\\u318F\\uAC00-\\uD7A3]")
+
+private fun hasHangul(text: String): Boolean = HANGUL.containsMatchIn(text)

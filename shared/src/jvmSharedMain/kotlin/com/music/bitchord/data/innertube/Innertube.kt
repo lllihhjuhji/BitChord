@@ -596,7 +596,8 @@ object Innertube {
      * The watch queue that YouTube Music would play after [videoId] — the
      * "RDAMVM" radio mix. Used to keep AutoPlay going past the last track.
      */
-    suspend fun next(videoId: String): JsonObject = postMusic("next") {
+    suspend fun next(videoId: String, region: String? = null): JsonObject =
+        postMusic("next", region = region) {
         put("videoId", videoId)
         put("playlistId", "RDAMVM$videoId")
         put("isAudioOnly", true)
@@ -1097,6 +1098,7 @@ object Innertube {
     private suspend fun postMusic(
         endpoint: String,
         query: Map<String, String> = emptyMap(),
+        region: String? = null,
         bodyExtras: JsonObjectBuilder.() -> Unit,
     ): JsonObject {
         // This is the common authenticated request path: Home, Library,
@@ -1138,7 +1140,7 @@ object Innertube {
                                 put("clientName", "WEB_REMIX")
                                 put("clientVersion", clientVersion)
                                 put("hl", currentLanguage)
-                                put("gl", currentRegion)
+                                put("gl", region ?: currentRegion)
                                 visitorData?.let { put("visitorData", it) }
                             }
                             putJsonObject("user") {

@@ -702,9 +702,10 @@ object YtMusicRepository {
      * What YouTube Music would play on after [videoId]. Feeds AutoPlay; the
      * seed track itself comes back first, so callers filter what they have.
      */
-    suspend fun radio(videoId: String): Result<List<Song>> = call("radio:$videoId") {
-        InnertubeParser.parseWatchQueue(Innertube.next(videoId))
-    }
+    suspend fun radio(videoId: String, region: String? = null): Result<List<Song>> =
+        call("radio:$videoId:${region.orEmpty()}") {
+            InnertubeParser.parseWatchQueue(Innertube.next(videoId, region))
+        }
 
     /**
      * The page of the artist called exactly [name], or null when there is none.
