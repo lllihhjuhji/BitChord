@@ -16,6 +16,27 @@ import kotlin.random.Random
  * radio + Last.fm similar tracks, language-filtered, then ordered so neighbours are alike.
  */
 object SimilarMix {
+
+    /** Region for YouTube radio when the mix is not meant to be Korean. */
+    private const val NON_KOREAN_REGION = "JP"
+
+    /** Korean picker labels searched as English, so the app's ko locale doesn't pull Korean songs in. */
+    private val KEYWORD_EN = mapOf(
+        "신나는" to "upbeat",
+        "잔잔한" to "calm",
+        "감성" to "emotional",
+        "운동" to "workout",
+        "집중" to "focus",
+        "새벽" to "late night",
+        "발라드" to "ballad",
+        "힙합" to "hip hop",
+        "트로트" to "trot",
+        "팝송" to "pop",
+    )
+
+    private fun searchQuery(keyword: String): String =
+        keyword.split(' ').filter { it.isNotBlank() }.joinToString(" ") { KEYWORD_EN[it] ?: it }
+
     private class Cand(val song: Song) {
         var score = 0f
         val sources = HashSet<String>()
@@ -47,13 +68,17 @@ object SimilarMix {
         keyword: String? = null,
     ): List<Song> {
         val history = YtMusicRepository.history().getOrNull().orEmpty()
+        val kw = keyword?.takeIf { it.isNotBlank() }
+        // J-pop / 팝송 explicitly ask for non-Korean results; null = decided by the seed below.
+        val kwAllowsKorean: Boolean? = kw?.let { !(it.contains("j-pop", true) || it.contains("팝송")) }
+
         val seeds: List<Song> = when {
             seedSong != null -> listOf(seedSong)
-            !keyword.isNullOrBlank() -> runCatching {
-                YtMusicRepository.search(keyword, SearchFilter.SONGS).getOrNull().orEmpty()
+            kw != null -> runCatching {
+                YtMusicRepository.search(searchQuery(kw), SearchFilter.SONGS).getOrNull().orEmpty()
             }.getOrDefault(emptyList()).mapNotNull {
                 (it as? SearchResult.Track)?.song ?: (it as? SearchResult.TopTrack)?.song
-            }.take(4)
+            }.filter { kwAllowsKorean != false || script(it) != 1 }.take(4)
             else -> {
                 if (history.isEmpty()) return emptyList()
                 val p = script(history[0])
@@ -62,6 +87,8 @@ object SimilarMix {
         }
         if (seeds.isEmpty()) return emptyList()
         val primary = script(seeds[0])
+        val allowKorean = kwAllowsKorean ?: (primary == 1)
+        val region = if (allowKorean) null else NON_KOREAN_REGION
         val played = history.mapTo(HashSet()) { it.videoId }.apply { addAll(excludeSongIds) }
 
         val cands = HashMap<String, Cand>()
@@ -78,7 +105,7 @@ object SimilarMix {
         coroutineScope {
             seeds.map { seed ->
                 async {
-                    val radio = runCatching { YtMusicRepository.radio(seed.videoId).getOrNull().orEmpty() }
+                    val radio = runCatching { YtMusicRepository.radio(seed.videoId, region).getOrNull().orEmpty() }
                         .getOrDefault(emptyList())
                     radio.forEachIndexed { i, s ->
                         add(s, 1f + 0.5f * (1f - i / radio.size.toFloat()), "r:${seed.videoId}")
@@ -110,6 +137,7 @@ object SimilarMix {
             val cs = script(s)
             s.videoId !in played &&
                 ArtistAffinity.score(s.artist) > -3f &&
+                (allowKorean || cs != 1) &&
                 (cs == primary || c.score >= 4f || ((cs == 0 || primary == 0) && c.score >= 2f))
         }
 
