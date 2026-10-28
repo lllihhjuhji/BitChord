@@ -1735,6 +1735,12 @@ object AppSettings {
         prefs.edit().putString(KEY_SIMILAR_MIX_SHOWN, ids.joinToString(",")).apply()
     }
 
+    fun homeFeedCache(): String? = prefs.getString(KEY_HOME_FEED_CACHE, null)
+
+    fun setHomeFeedCache(json: String) {
+        prefs.edit().putString(KEY_HOME_FEED_CACHE, json).apply()
+    }
+
     fun setHomeRecentsViewType(value: LibraryViewType) {
         homeRecentsViewType.value = value
         prefs.edit().putString(KEY_HOME_RECENTS_VIEW_TYPE, value.name).apply()
@@ -2070,6 +2076,7 @@ object AppSettings {
     private const val KEY_LOCAL_MUSIC_VIEW_TYPE = "local_music_view_type"
     private const val KEY_DOWNLOADED_MUSIC_VIEW_TYPE = "downloaded_music_view_type"
     private const val KEY_HOME_RECENTS_VIEW_TYPE = "home_recents_view_type"
+    private const val KEY_HOME_FEED_CACHE = "home_feed_cache"
     private const val KEY_SIMILAR_MIX_SHOWN = "similar_mix_shown"
     private const val KEY_LOCAL_MUSIC_FOLDER_URI = "local_music_folder_uri"
     private const val KEY_WEBDAV_URL = "webdav_url"

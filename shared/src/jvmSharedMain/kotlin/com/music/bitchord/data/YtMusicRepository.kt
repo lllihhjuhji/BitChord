@@ -61,8 +61,8 @@ object YtMusicRepository {
      * shelves the same way the official app does as you scroll; signed out
      * it's empty and there's nothing more to fetch.
      */
-    suspend fun home(): Result<HomeFeed> = call("home") {
-        val home = Innertube.browse("FEmusic_home")
+    suspend fun home(fresh: Boolean = false): Result<HomeFeed> = call("home") {
+        val home = cachedBrowse("FEmusic_home", HOME_TTL_MS, fresh)
         HomeFeed(InnertubeParser.parseHome(home), InnertubeParser.continuationToken(home))
     }
 
@@ -164,7 +164,7 @@ object YtMusicRepository {
      * Recommended discovery tracks for Quick Picks, strictly excluding listening history and recents.
      */
     suspend fun quickPicks(excludeSongIds: Set<String> = emptySet()): Result<List<Song>> = call("quickPicks") {
-        val homeRaw = runCatching { Innertube.browse("FEmusic_home") }.getOrNull()
+        val homeRaw = runCatching { cachedBrowse("FEmusic_home", HOME_TTL_MS) }.getOrNull()
         val shelves = if (homeRaw != null) InnertubeParser.parseHome(homeRaw) else emptyList()
 
         // 1. Direct "Quick picks" or "Mix" or "Recommendations" shelf
@@ -405,7 +405,52 @@ object YtMusicRepository {
     private const val RECENT_LIMIT = 20
 
     private suspend fun shelvesOf(browseId: String): List<HomeShelf> =
-        InnertubeParser.parseHome(Innertube.browse(browseId))
+        InnertubeParser.parseHome(cachedBrowse(browseId, if (browseId == "FEmusic_home") HOME_TTL_MS else SUPPLEMENT_TTL_MS))
+
+    // ---- Short-lived browse cache ------------------------------------------
+
+    private const val HOME_TTL_MS = 20_000L
+    private const val SUPPLEMENT_TTL_MS = 300_000L
+
+    private class BrowseEntry(
+        val at: Long,
+        val value: kotlinx.coroutines.Deferred<kotlinx.serialization.json.JsonObject>,
+    )
+
+    private val browseScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    )
+    private val browseCache = HashMap<String, BrowseEntry>()
+
+    /** Dropped on sign-in, sign-out and profile switches so nobody sees another listener feed. */
+    fun invalidateBrowseCache() = synchronized(browseCache) { browseCache.clear() }
+
+    /**
+     * One browse per [browseId] at a time, reused for [ttlMs]. A request already in
+     * flight is shared instead of repeated, and a failed one is never kept.
+     */
+    private suspend fun cachedBrowse(
+        browseId: String,
+        ttlMs: Long,
+        fresh: Boolean = false,
+    ): kotlinx.serialization.json.JsonObject {
+        val key = "$browseId|${Innertube.cookie?.hashCode() ?: 0}|${Innertube.currentLocaleTag}"
+        val entry = synchronized(browseCache) {
+            if (fresh) browseCache.remove(key)
+            val now = System.currentTimeMillis()
+            browseCache[key]?.takeIf { now - it.at < ttlMs }
+                ?: BrowseEntry(now, browseScope.async { Innertube.browse(browseId) })
+                    .also { browseCache[key] = it }
+        }
+        return try {
+            entry.value.await()
+        } catch (e: Throwable) {
+            // The caller giving up must not throw away a request others are waiting on.
+            if (e is CancellationException && entry.value.isActive) throw e
+            synchronized(browseCache) { if (browseCache[key] === entry) browseCache.remove(key) }
+            throw e
+        }
+    }
 
     /** The server-defined mood and genre categories used by Explore. */
     suspend fun moodAndGenres(): Result<List<MoodGenreSection>> = call("moods-and-genres") {
