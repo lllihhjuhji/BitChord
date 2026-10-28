@@ -1,6 +1,9 @@
 package com.music.bitchord.data.scrobbling
 
 import io.ktor.client.HttpClient
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
@@ -247,6 +250,28 @@ object LastFM {
             null,
             null,
         ).toString()
+    }
+
+    /** Last.fm similar tracks for [track] by [artist]: (title, artist) pairs, best match first. */
+    suspend fun getSimilar(track: String, artist: String, limit: Int = 30): List<Pair<String, String>> {
+        val text = postAndRead(
+            method = "track.getSimilar",
+            extra = mapOf(
+                "track" to track,
+                "artist" to artist,
+                "limit" to limit.toString(),
+                "autocorrect" to "1",
+            ),
+        )
+        val arr = json.parseToJsonElement(text)
+            .jsonObject["similartracks"]?.jsonObject?.get("track")?.jsonArray
+            ?: return emptyList()
+        return arr.mapNotNull { el ->
+            val o = el.jsonObject
+            val name = o["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val art = o["artist"]?.jsonObject?.get("name")?.jsonPrimitive?.content ?: return@mapNotNull null
+            name to art
+        }
     }
 
     private fun requireSessionKey(): String = runtimeConfig.sessionKey ?: throw LastFmException(9, "Session key missing")
