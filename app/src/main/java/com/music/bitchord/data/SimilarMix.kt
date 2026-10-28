@@ -102,14 +102,21 @@ object SimilarMix {
         }
 
         val gate = Semaphore(6)
+        val seedIds = seeds.mapTo(HashSet()) { it.videoId }
+
+        suspend fun addRadio(id: String, weight: Float): List<Song> {
+            val radio = runCatching { YtMusicRepository.radio(id, region).getOrNull().orEmpty() }
+                .getOrDefault(emptyList())
+            radio.forEachIndexed { i, s ->
+                add(s, weight * (1f + 0.5f * (1f - i / radio.size.toFloat())), "r:$id")
+            }
+            return radio
+        }
+
         coroutineScope {
-            seeds.map { seed ->
+            val firstHop = seeds.map { seed ->
                 async {
-                    val radio = runCatching { YtMusicRepository.radio(seed.videoId, region).getOrNull().orEmpty() }
-                        .getOrDefault(emptyList())
-                    radio.forEachIndexed { i, s ->
-                        add(s, 1f + 0.5f * (1f - i / radio.size.toFloat()), "r:${seed.videoId}")
-                    }
+                    val radio = addRadio(seed.videoId, 1f)
                     if (LastFM.isInitialized()) {
                         val sim = runCatching { LastFM.getSimilar(seed.title, seed.artist, 8) }
                             .getOrDefault(emptyList())
@@ -128,17 +135,25 @@ object SimilarMix {
                             }
                         }.awaitAll()
                     }
+                    radio
                 }
             }.awaitAll()
+            // Second hop: a station for a few of the first stations' tracks, so one
+            // seed is no longer capped at a single page of ~25 tracks.
+            firstHop.flatten()
+                .filter { it.videoId !in seedIds && (allowKorean || script(it) != 1) }
+                .distinctBy { it.videoId }
+                .shuffled()
+                .take(6)
+                .map { t -> async { gate.withPermit { addRadio(t.videoId, 0.6f) } } }
+                .awaitAll()
         }
 
         val pool = cands.values.filter { c ->
             val s = c.song
-            val cs = script(s)
             s.videoId !in played &&
                 ArtistAffinity.score(s.artist) > -3f &&
-                (allowKorean || cs != 1) &&
-                (cs == primary || c.score >= 4f || ((cs == 0 || primary == 0) && c.score >= 2f))
+                (allowKorean || script(s) != 1)
         }
 
         val ranked = pool
@@ -148,13 +163,18 @@ object SimilarMix {
 
         val perArtist = HashMap<String, Int>()
         val picked = ArrayList<Cand>()
-        for (c in ranked) {
-            if (picked.size >= size) break
-            val k = c.song.artistId ?: ArtistAffinity.key(c.song.artist)
-            val n = perArtist[k] ?: 0
-            if (n >= 2) continue
-            perArtist[k] = n + 1
-            picked.add(c)
+        val pickedIds = HashSet<String>()
+        for (cap in intArrayOf(2, 5)) {
+            for (c in ranked) {
+                if (picked.size >= size) break
+                if (c.song.videoId in pickedIds) continue
+                val k = c.song.artistId ?: ArtistAffinity.key(c.song.artist)
+                val n = perArtist[k] ?: 0
+                if (n >= cap) continue
+                perArtist[k] = n + 1
+                pickedIds.add(c.song.videoId)
+                picked.add(c)
+            }
         }
         if (picked.isEmpty()) return emptyList()
 
