@@ -4,6 +4,7 @@ import com.music.bitchord.data.model.SearchFilter
 import com.music.bitchord.data.model.SearchResult
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.scrobbling.LastFM
+import com.music.bitchord.data.settings.AppSettings
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -23,13 +24,27 @@ object SimilarMix {
     /** Tracks this mix handed out recently, so the same song is not suggested build after build. */
     private const val SHOWN_MEMORY = 150
     private val shown = LinkedHashSet<String>()
+    private var shownLoaded = false
 
-    private fun rememberShown(songs: List<Song>) = synchronized(shown) {
-        songs.forEach { shown.remove(it.videoId); shown.add(it.videoId) }
-        while (shown.size > SHOWN_MEMORY) shown.remove(shown.first())
+    /** Survives restarts: kept in AppSettings as a comma-separated id list. */
+    private fun loadShown() {
+        if (shownLoaded) return
+        shownLoaded = true
+        runCatching { shown.addAll(AppSettings.similarMixShown()) }
     }
 
-    private fun shownSnapshot(): Set<String> = synchronized(shown) { HashSet(shown) }
+    private fun rememberShown(songs: List<Song>) = synchronized(shown) {
+        loadShown()
+        songs.forEach { shown.remove(it.videoId); shown.add(it.videoId) }
+        while (shown.size > SHOWN_MEMORY) shown.remove(shown.first())
+        runCatching { AppSettings.setSimilarMixShown(shown) }
+        Unit
+    }
+
+    private fun shownSnapshot(): Set<String> = synchronized(shown) {
+        loadShown()
+        HashSet(shown)
+    }
 
     /** Korean picker labels searched as English, so the app's ko locale doesn't pull Korean songs in. */
     private val KEYWORD_EN = mapOf(
