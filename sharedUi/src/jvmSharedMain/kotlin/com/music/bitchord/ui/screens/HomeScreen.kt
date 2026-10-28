@@ -147,6 +147,8 @@ fun HomeScreen(
     shuffleLoading: Boolean = false,
     onShufflePlay: ((Int) -> Unit)? = null,
     onShuffleRefresh: (() -> Unit)? = null,
+    shuffleMode: Int = 0,
+    onShuffleMode: ((Int) -> Unit)? = null,
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
 
@@ -212,6 +214,8 @@ fun HomeScreen(
                                 shuffleSection(
                                     songs = shuffleSongs,
                                     loading = shuffleLoading,
+                                    mode = shuffleMode,
+                                    onMode = { onShuffleMode?.invoke(it) },
                                     currentSong = currentSong,
                                     isPlaying = isPlaying,
                                     onPlay = onShufflePlay,
@@ -1104,12 +1108,14 @@ internal fun ShelfCard(
 internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
     songs: List<Song>,
     loading: Boolean,
+    mode: Int,
+    onMode: (Int) -> Unit,
     currentSong: Song?,
     isPlaying: Boolean,
     onPlay: (Int) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    if (songs.isEmpty() && !loading) return
+    if (songs.isEmpty() && !loading && mode == 0) return
     item(key = "shuffle_mix") {
         val expanded = remember { androidx.compose.runtime.mutableStateOf(false) }
         val shown = if (expanded.value) songs else songs.take(5)
@@ -1144,9 +1150,27 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
                     )
                 }
             }
+            Row(
+                modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("무작위", "비슷한 곡").forEachIndexed { i, label ->
+                    val on = mode == i
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { if (!on) onMode(i) }
+                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                    )
+                }
+            }
             if (songs.isEmpty()) {
                 Text(
-                    text = "만드는 중…",
+                    text = if (loading) "만드는 중…" else "곡을 찾지 못했어",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 12.dp),

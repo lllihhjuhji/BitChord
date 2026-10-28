@@ -1463,10 +1463,16 @@ private fun BitChordApp(
      */
     var shuffleSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var shuffleLoading by remember { mutableStateOf(false) }
+    var shuffleMode by remember { mutableStateOf(0) }
     val loadShuffle: () -> Unit = {
         scope.launch {
             shuffleLoading = true
-            shuffleSongs = com.music.bitchord.data.YtMusicRepository.discoverMix().getOrNull().orEmpty()
+            shuffleSongs = emptyList()
+            shuffleSongs = if (shuffleMode == 0) {
+                com.music.bitchord.data.YtMusicRepository.discoverMix().getOrNull().orEmpty()
+            } else {
+                com.music.bitchord.data.SimilarMix.build()
+            }
             shuffleLoading = false
         }
     }
@@ -3094,6 +3100,8 @@ private fun BitChordApp(
                                 shuffleSongs = shuffleSongs,
                                 shuffleLoading = shuffleLoading,
                                 onShuffleRefresh = loadShuffle,
+                                shuffleMode = shuffleMode,
+                                onShuffleMode = { shuffleMode = it; loadShuffle() },
                                 onShufflePlay = { index ->
                                     scope.launch {
                                         val c = controller
@@ -3102,7 +3110,7 @@ private fun BitChordApp(
                                             c.playSongs(
                                                 shuffleSongs.map {
                                                     it.copy(
-                                                        playbackSource = "무작위 셔플",
+                                                        playbackSource = if (shuffleMode == 0) "무작위 셔플" else "비슷한 곡",
                                                         playbackSourceType = PlaybackSourceType.HOME,
                                                     )
                                                 },
