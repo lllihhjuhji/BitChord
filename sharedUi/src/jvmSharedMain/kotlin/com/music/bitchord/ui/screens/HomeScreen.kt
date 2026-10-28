@@ -221,6 +221,7 @@ fun HomeScreen(
                                     mode = shuffleMode,
                                     onMode = { onShuffleMode?.invoke(it) },
                                     onOpen = { onShuffleOpen?.invoke(it) },
+                                    coverPool = state.data.flatMap { it.items }.mapNotNull { it.thumbnailUrl }.distinct(),
                                     recentSongs = shuffleRecent,
                                     onPickSong = { onShufflePickSong?.invoke(it) },
                                     onPickKeyword = { onShuffleKeyword?.invoke(it) },
@@ -1126,9 +1127,13 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
     onPlay: (Int) -> Unit,
     onRefresh: () -> Unit,
     onOpen: (Int) -> Unit = {},
+    coverPool: List<String> = emptyList(),
 ) {
     item(key = "shuffle_cards") {
-        val covers = songs.map { it.thumbnailUrl }
+        // Cards always show four random covers from the feed, whatever the mix holds.
+        val picks = remember(coverPool.isNotEmpty()) { coverPool.shuffled() }
+        val firstCovers = picks.take(4)
+        val secondCovers = if (picks.size >= 8) picks.subList(4, 8) else picks.asReversed().take(4)
         Column(Modifier.padding(bottom = 26.dp)) {
             SectionHeader("셔플", "")
             ShelfRow(
@@ -1139,7 +1144,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
                     ShuffleCard(
                         title = "무작위 셔플",
                         subtitle = "처음 듣는 곡 위주",
-                        covers = if (mode == 0) covers else emptyList(),
+                        covers = firstCovers,
                         onClick = { onOpen(0) },
                     )
                 }
@@ -1147,7 +1152,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
                     ShuffleCard(
                         title = "장르별 셔플",
                         subtitle = "비슷한 곡끼리 이어서",
-                        covers = if (mode == 1) covers else emptyList(),
+                        covers = secondCovers,
                         onClick = { onOpen(1) },
                     )
                 }
