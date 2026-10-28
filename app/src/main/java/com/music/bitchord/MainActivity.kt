@@ -1461,7 +1461,16 @@ private fun BitChordApp(
      * remixes of the same song. Album, artist and playlist pages keep [play],
      * where the surrounding list *is* the thing the user asked for.
      */
-    var discoverLoading by remember { mutableStateOf(false) }
+    var shuffleSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var shuffleLoading by remember { mutableStateOf(false) }
+    val loadShuffle: () -> Unit = {
+        scope.launch {
+            shuffleLoading = true
+            shuffleSongs = com.music.bitchord.data.YtMusicRepository.discoverMix().getOrNull().orEmpty()
+            shuffleLoading = false
+        }
+    }
+    LaunchedEffect(Unit) { loadShuffle() }
     val playRadio: (Song, QueueSource) -> Unit = { song, source ->
         playRequestGeneration++
         activeRadioSeed = null
@@ -3082,27 +3091,26 @@ private fun BitChordApp(
                                 onLoadMore = viewModel::loadMoreHome,
                                 loadingMore = homeLoadingMore,
                                 recentlyPlayedLoading = homeRecentlyPlayedLoading,
-                                onDiscoverMix = {
+                                shuffleSongs = shuffleSongs,
+                                shuffleLoading = shuffleLoading,
+                                onShuffleRefresh = loadShuffle,
+                                onShufflePlay = { index ->
                                     scope.launch {
-                                        discoverLoading = true
-                                        val mix = com.music.bitchord.data.YtMusicRepository.discoverMix().getOrNull()
-                                        discoverLoading = false
                                         val c = controller
-                                        if (!mix.isNullOrEmpty() && c != null && !refusedByHost()) {
+                                        if (shuffleSongs.isNotEmpty() && c != null && !refusedByHost()) {
                                             playRequestGeneration++
                                             c.playSongs(
-                                                mix.map {
+                                                shuffleSongs.map {
                                                     it.copy(
-                                                        playbackSource = "발견 믹스",
+                                                        playbackSource = "무작위 셔플",
                                                         playbackSourceType = PlaybackSourceType.HOME,
                                                     )
                                                 },
-                                                0,
+                                                index,
                                             )
                                         }
                                     }
                                 },
-                                discoverLoading = discoverLoading,
                             )
                             TAB_EXPLORE -> selectedMoodGenre?.let { category ->
                                 MoodGenrePlaylistsScreen(

@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cached
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
@@ -142,8 +143,10 @@ fun HomeScreen(
     leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
-    onDiscoverMix: (() -> Unit)? = null,
-    discoverLoading: Boolean = false,
+    shuffleSongs: List<Song> = emptyList(),
+    shuffleLoading: Boolean = false,
+    onShufflePlay: ((Int) -> Unit)? = null,
+    onShuffleRefresh: (() -> Unit)? = null,
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
 
@@ -175,21 +178,6 @@ fun HomeScreen(
                     SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
                 }
             }
-            if (onDiscoverMix != null && state is UiState.Success) {
-                item(key = "discover_mix") {
-                    Column(Modifier.padding(bottom = 26.dp)) {
-                        SectionHeader("발견 믹스", "처음 듣는 곡 위주")
-                        androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = PAGE_GUTTER)) {
-                            NewShelfCard(
-                                icon = Icons.Rounded.Cached,
-                                label = "발견 믹스",
-                                subtitle = if (discoverLoading) "만드는 중…" else "탭해서 재생",
-                                onClick = { if (!discoverLoading) onDiscoverMix() },
-                            )
-                        }
-                    }
-                }
-            }
             when (state) {
                 is UiState.Loading -> {
                     if (recentlyPlayedLoading) {
@@ -219,6 +207,18 @@ fun HomeScreen(
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         firstIsHero = leadHero && !recentlyPlayedLoading,
+                        afterFirst = {
+                            if (!recentlyPlayedLoading && onShufflePlay != null) {
+                                shuffleSection(
+                                    songs = shuffleSongs,
+                                    loading = shuffleLoading,
+                                    currentSong = currentSong,
+                                    isPlaying = isPlaying,
+                                    onPlay = onShufflePlay,
+                                    onRefresh = { onShuffleRefresh?.invoke() },
+                                )
+                            }
+                        },
                         recentsViewType = recentsViewType,
                         onRecentsViewTypeToggle = {
                             AppUi.host.setHomeRecentsViewType(
@@ -269,8 +269,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
     firstIsHero: Boolean = true,
     recentsViewType: LibraryViewType,
     onRecentsViewTypeToggle: () -> Unit,
+    afterFirst: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {},
 ) {
+    if (shelves.size < 2) afterFirst(this)
     shelves.forEachIndexed { index, shelf ->
+        if (index == 1) afterFirst(this)
         item(key = shelf.title + index) {
             val openItem: (ShelfItem) -> Unit = { item -> onItemClick(item, shelf.title) }
             if (index == 0 && shelf.title.equals(RECENTS_TITLE, ignoreCase = true)) {
@@ -1095,5 +1098,84 @@ internal fun ShelfCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
+    songs: List<Song>,
+    loading: Boolean,
+    currentSong: Song?,
+    isPlaying: Boolean,
+    onPlay: (Int) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    if (songs.isEmpty() && !loading) return
+    item(key = "shuffle_mix") {
+        val expanded = remember { androidx.compose.runtime.mutableStateOf(false) }
+        val shown = if (expanded.value) songs else songs.take(5)
+        Column(Modifier.padding(bottom = 26.dp)) {
+            Box(Modifier.fillMaxWidth()) {
+                SectionHeader("무작위 셔플", "처음 듣는 곡 위주")
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = PAGE_GUTTER - 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Cached,
+                        contentDescription = "새로고침",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(50))
+                            .clickable { if (!loading) onRefresh() }
+                            .padding(8.dp),
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = "재생",
+                        tint = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(50))
+                            .clickable { if (songs.isNotEmpty()) onPlay(0) }
+                            .padding(8.dp),
+                    )
+                }
+            }
+            if (songs.isEmpty()) {
+                Text(
+                    text = "만드는 중…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 12.dp),
+                )
+            } else {
+                shown.forEachIndexed { i, s ->
+                    Box(Modifier.padding(horizontal = PAGE_GUTTER)) {
+                        CompactTrackRow(
+                            title = s.title,
+                            subtitle = s.artist,
+                            thumbnailUrl = s.thumbnailUrl,
+                            onClick = { onPlay(i) },
+                            onLongPress = null,
+                            isCurrent = currentSong?.videoId == s.videoId,
+                            isPlaying = isPlaying && currentSong?.videoId == s.videoId,
+                        )
+                    }
+                }
+                if (songs.size > 5) {
+                    Text(
+                        text = if (expanded.value) "접기" else "전체 보기 (${songs.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { expanded.value = !expanded.value }
+                            .padding(horizontal = PAGE_GUTTER, vertical = 10.dp),
+                    )
+                }
+            }
+        }
     }
 }
