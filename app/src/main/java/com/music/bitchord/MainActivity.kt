@@ -1477,6 +1477,20 @@ private fun BitChordApp(
         }
     }
     LaunchedEffect(Unit) { loadShuffle() }
+    var shuffleRecent by remember { mutableStateOf<List<Song>>(emptyList()) }
+    val loadSimilar: (Song?, String?) -> Unit = { seed, kw ->
+        scope.launch {
+            shuffleLoading = true
+            shuffleSongs = emptyList()
+            shuffleSongs = com.music.bitchord.data.SimilarMix.build(seedSong = seed, keyword = kw)
+            shuffleLoading = false
+        }
+    }
+    val loadRecent: () -> Unit = {
+        scope.launch {
+            shuffleRecent = com.music.bitchord.data.YtMusicRepository.history().getOrNull().orEmpty().take(5)
+        }
+    }
     val playRadio: (Song, QueueSource) -> Unit = { song, source ->
         playRequestGeneration++
         activeRadioSeed = null
@@ -3099,9 +3113,12 @@ private fun BitChordApp(
                                 recentlyPlayedLoading = homeRecentlyPlayedLoading,
                                 shuffleSongs = shuffleSongs,
                                 shuffleLoading = shuffleLoading,
-                                onShuffleRefresh = loadShuffle,
+                                onShuffleRefresh = { if (shuffleMode == 0) loadShuffle() else shuffleSongs = emptyList() },
                                 shuffleMode = shuffleMode,
-                                onShuffleMode = { shuffleMode = it; loadShuffle() },
+                                onShuffleMode = { shuffleMode = it; shuffleSongs = emptyList(); if (it == 0) loadShuffle() else loadRecent() },
+                                shuffleRecent = shuffleRecent,
+                                onShufflePickSong = { loadSimilar(it, null) },
+                                onShuffleKeyword = { loadSimilar(null, it) },
                                 onShufflePlay = { index ->
                                     scope.launch {
                                         val c = controller

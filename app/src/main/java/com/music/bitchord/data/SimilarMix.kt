@@ -40,11 +40,28 @@ object SimilarMix {
         }
     }
 
-    suspend fun build(size: Int = 40, excludeSongIds: Set<String> = emptySet()): List<Song> {
+    suspend fun build(
+        size: Int = 40,
+        excludeSongIds: Set<String> = emptySet(),
+        seedSong: Song? = null,
+        keyword: String? = null,
+    ): List<Song> {
         val history = YtMusicRepository.history().getOrNull().orEmpty()
-        if (history.isEmpty()) return emptyList()
-        val primary = script(history[0])
-        val seeds = history.take(10).filter { script(it) == primary }.take(4)
+        val seeds: List<Song> = when {
+            seedSong != null -> listOf(seedSong)
+            !keyword.isNullOrBlank() -> runCatching {
+                YtMusicRepository.search(keyword, SearchFilter.SONGS).getOrNull().orEmpty()
+            }.getOrDefault(emptyList()).mapNotNull {
+                (it as? SearchResult.Track)?.song ?: (it as? SearchResult.TopTrack)?.song
+            }.take(4)
+            else -> {
+                if (history.isEmpty()) return emptyList()
+                val p = script(history[0])
+                history.take(10).filter { script(it) == p }.take(4)
+            }
+        }
+        if (seeds.isEmpty()) return emptyList()
+        val primary = script(seeds[0])
         val played = history.mapTo(HashSet()) { it.videoId }.apply { addAll(excludeSongIds) }
 
         val cands = HashMap<String, Cand>()
@@ -128,6 +145,6 @@ object SimilarMix {
             out.add(next.song)
             cur = next
         }
-        return out
+        return if (seedSong != null) listOf(seedSong) + out.filter { it.videoId != seedSong.videoId } else out
     }
 }

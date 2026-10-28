@@ -149,6 +149,9 @@ fun HomeScreen(
     onShuffleRefresh: (() -> Unit)? = null,
     shuffleMode: Int = 0,
     onShuffleMode: ((Int) -> Unit)? = null,
+    shuffleRecent: List<Song> = emptyList(),
+    onShufflePickSong: ((Song) -> Unit)? = null,
+    onShuffleKeyword: ((String) -> Unit)? = null,
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
 
@@ -216,6 +219,9 @@ fun HomeScreen(
                                     loading = shuffleLoading,
                                     mode = shuffleMode,
                                     onMode = { onShuffleMode?.invoke(it) },
+                                    recentSongs = shuffleRecent,
+                                    onPickSong = { onShufflePickSong?.invoke(it) },
+                                    onPickKeyword = { onShuffleKeyword?.invoke(it) },
                                     currentSong = currentSong,
                                     isPlaying = isPlaying,
                                     onPlay = onShufflePlay,
@@ -1110,6 +1116,9 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
     loading: Boolean,
     mode: Int,
     onMode: (Int) -> Unit,
+    recentSongs: List<Song>,
+    onPickSong: (Song) -> Unit,
+    onPickKeyword: (String) -> Unit,
     currentSong: Song?,
     isPlaying: Boolean,
     onPlay: (Int) -> Unit,
@@ -1121,7 +1130,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
         val shown = if (expanded.value) songs else songs.take(5)
         Column(Modifier.padding(bottom = 26.dp)) {
             Box(Modifier.fillMaxWidth()) {
-                SectionHeader("무작위 셔플", "처음 듣는 곡 위주")
+                SectionHeader("셔플", if (mode == 0) "처음 듣는 곡 위주" else "비슷한 곡끼리 이어서")
                 Row(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -1154,7 +1163,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
                 modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("무작위", "비슷한 곡").forEachIndexed { i, label ->
+                listOf("무작위 셔플", "장르별 셔플").forEachIndexed { i, label ->
                     val on = mode == i
                     Text(
                         text = label,
@@ -1163,12 +1172,14 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
                             .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { if (!on) onMode(i) }
+                            .clickable { onMode(i) }
                             .padding(horizontal = 14.dp, vertical = 7.dp),
                     )
                 }
             }
-            if (songs.isEmpty()) {
+            if (mode == 1 && songs.isEmpty() && !loading) {
+                ShufflePicker(recentSongs, onPickSong, onPickKeyword)
+            } else if (songs.isEmpty()) {
                 Text(
                     text = if (loading) "만드는 중…" else "곡을 찾지 못했어",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1200,6 +1211,87 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PickLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun PickChip(
+    label: String,
+    on: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge,
+        color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    )
+}
+
+@Composable
+private fun ShufflePicker(
+    recent: List<Song>,
+    onSong: (Song) -> Unit,
+    onKeyword: (String) -> Unit,
+) {
+    val genres = listOf("J-pop", "K-pop", "발라드", "힙합", "트로트", "팝송")
+    val moods = listOf("신나는", "잔잔한", "감성", "운동", "집중", "새벽")
+    val genre = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val mood = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    Column(Modifier.padding(vertical = 4.dp)) {
+        if (recent.isNotEmpty()) {
+            PickLabel("곡으로 시작")
+            androidx.compose.foundation.lazy.LazyRow(
+                contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(recent) { s ->
+                    PickChip(s.title, false, Modifier.width(150.dp)) { onSong(s) }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        PickLabel("장르")
+        androidx.compose.foundation.lazy.LazyRow(
+            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(genres) { g ->
+                PickChip(g, genre.value == g) { genre.value = if (genre.value == g) null else g }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        PickLabel("분위기")
+        androidx.compose.foundation.lazy.LazyRow(
+            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(moods) { m ->
+                PickChip(m, mood.value == m) { mood.value = if (mood.value == m) null else m }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        val ready = genre.value != null || mood.value != null
+        PickChip("만들기", ready, Modifier.padding(horizontal = PAGE_GUTTER)) {
+            if (ready) onKeyword(listOfNotNull(genre.value, mood.value).joinToString(" "))
         }
     }
 }
