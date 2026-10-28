@@ -1464,6 +1464,7 @@ private fun BitChordApp(
     var shuffleSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var shuffleLoading by remember { mutableStateOf(false) }
     var shuffleMode by remember { mutableStateOf(0) }
+    var shuffleDetail by remember { mutableStateOf<Int?>(null) }
     val loadShuffle: () -> Unit = {
         scope.launch {
             shuffleLoading = true
@@ -1476,7 +1477,7 @@ private fun BitChordApp(
             shuffleLoading = false
         }
     }
-    LaunchedEffect(Unit) { loadShuffle() }
+    // shuffle is built lazily when its card is opened (keeps startup requests free for Home)
     var shuffleRecent by remember { mutableStateOf<List<Song>>(emptyList()) }
     val loadSimilar: (Song?, String?) -> Unit = { seed, kw ->
         scope.launch {
@@ -2578,6 +2579,7 @@ private fun BitChordApp(
         // and dialog further down registers its own handler as it opens, and
         // so outranks all of these while it is up.
         BackHandler(enabled = canGoBack, onBack = goBack)
+        BackHandler(enabled = shuffleDetail != null) { shuffleDetail = null }
         // An artist page's shelf opened in place: back folds it before it
         // leaves the page. Only while that page is the one on screen.
         BackHandler(enabled = detail != null && detailActiveShelf != null) { detailActiveShelf = null }
@@ -3075,7 +3077,37 @@ private fun BitChordApp(
                                 },
                             )
                         } else when ((destination as? AppDestination.Tab)?.index ?: selectedTab) {
-                            TAB_HOME -> HomeScreen(
+                            TAB_HOME -> if (shuffleDetail != null) {
+                            com.music.bitchord.ui.screens.ShuffleDetailScreen(
+                                mode = shuffleDetail ?: 0,
+                                songs = shuffleSongs,
+                                loading = shuffleLoading,
+                                recentSongs = shuffleRecent,
+                                onPickSong = { loadSimilar(it, null) },
+                                onPickKeyword = { loadSimilar(null, it) },
+                                onPlay = { index ->
+                                    scope.launch {
+                                        val c = controller
+                                        if (shuffleSongs.isNotEmpty() && c != null && !refusedByHost()) {
+                                            playRequestGeneration++
+                                            c.playSongs(
+                                                shuffleSongs.map {
+                                                    it.copy(
+                                                        playbackSource = if (shuffleMode == 0) "무작위 셔플" else "비슷한 곡",
+                                                        playbackSourceType = PlaybackSourceType.HOME,
+                                                    )
+                                                },
+                                                index,
+                                            )
+                                        }
+                                    }
+                                },
+                                onRefresh = { if (shuffleMode == 0) loadShuffle() else shuffleSongs = emptyList() },
+                                onBack = { shuffleDetail = null },
+                                contentPadding = listPadding,
+                                currentSong = player.song,
+                            )
+                        } else HomeScreen(
                                 state = homeState,
                                 listState = homeListState,
                                 currentSong = player.song,
@@ -3118,6 +3150,16 @@ private fun BitChordApp(
                                 onShuffleMode = { shuffleMode = it; shuffleSongs = emptyList(); if (it == 0) loadShuffle() else loadRecent() },
                                 shuffleRecent = shuffleRecent,
                                 onShufflePickSong = { loadSimilar(it, null) },
+                                onShuffleOpen = { target ->
+                                    if (shuffleMode != target) {
+                                        shuffleMode = target
+                                        shuffleSongs = emptyList()
+                                        if (target == 0) loadShuffle() else loadRecent()
+                                    } else if (target == 0 && shuffleSongs.isEmpty() && !shuffleLoading) {
+                                        loadShuffle()
+                                    }
+                                    shuffleDetail = target
+                                },
                                 onShuffleKeyword = { loadSimilar(null, it) },
                                 onShufflePlay = { index ->
                                     scope.launch {
