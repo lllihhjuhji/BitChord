@@ -128,7 +128,7 @@ object SimilarMix {
             }
         }
 
-        val gate = Semaphore(6)
+        val gate = Semaphore(8)
         val seedIds = seeds.mapTo(HashSet()) { it.videoId }
 
         suspend fun addRadio(id: String, weight: Float): List<Song> {
@@ -145,7 +145,7 @@ object SimilarMix {
                 async {
                     val radio = addRadio(seed.videoId, 1f)
                     if (LastFM.isInitialized()) {
-                        val sim = runCatching { LastFM.getSimilar(seed.title, seed.artist, 8) }
+                        val sim = runCatching { LastFM.getSimilar(seed.title, seed.artist, 4) }
                             .getOrDefault(emptyList())
                         sim.map { (t, a) ->
                             async {
