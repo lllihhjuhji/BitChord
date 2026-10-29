@@ -1,5 +1,7 @@
 package com.music.bitchord.ui.screens
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import com.music.bitchord.ui.components.contextClick
 import com.music.bitchord.ui.AppUi
 import com.music.bitchord.sharedui.resources.*
@@ -1193,12 +1195,29 @@ private fun PickChip(
 }
 
 @Composable
+private fun ChipGrid(items: List<String>, selected: String?, rows: Int, onPick: (String) -> Unit) {
+    val per = (items.size + rows - 1) / rows
+    Column(
+        Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = PAGE_GUTTER),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.chunked(per).forEach { line ->
+            androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                line.forEach { label -> PickChip(label, selected == label) { onPick(label) } }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ShufflePicker(
     recent: List<Song>,
     onSong: (Song) -> Unit,
     onKeyword: (String) -> Unit,
 ) {
-    val genres = listOf("K-pop", "아이돌", "걸그룹", "보이그룹", "발라드", "국힙", "국알앤비", "인디", "밴드", "OST", "트로트", "J-pop", "J-rock", "애니송", "시티팝", "팝송", "외힙", "외알앤비", "외록", "외인디", "재즈", "로파이", "어쿠스틱", "EDM", "클래식")
+    val genres = listOf("K-pop", "아이돌", "걸그룹", "보이그룹", "발라드", "국힙", "국알앤비", "인디", "밴드", "국재즈", "국로파이", "OST", "트로트", "J-pop", "J-rock", "애니송", "시티팝", "팝송", "외힙", "외알앤비", "외록", "외인디", "재즈", "로파이", "어쿠스틱", "EDM", "클래식")
     val moods = listOf("신나는", "잔잔한", "감성", "운동", "집중", "새벽", "비오는날", "드라이브", "공부", "잠들기전", "카페", "퇴근길", "이별", "여행", "파티")
     val genre = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     val mood = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
@@ -1216,24 +1235,10 @@ private fun ShufflePicker(
             Spacer(Modifier.height(10.dp))
         }
         PickLabel("장르")
-        androidx.compose.foundation.lazy.LazyRow(
-            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(genres) { g ->
-                PickChip(g, genre.value == g) { genre.value = if (genre.value == g) null else g }
-            }
-        }
+        ChipGrid(genres, genre.value, 3) { g -> genre.value = if (genre.value == g) null else g }
         Spacer(Modifier.height(10.dp))
         PickLabel("분위기")
-        androidx.compose.foundation.lazy.LazyRow(
-            contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(moods) { m ->
-                PickChip(m, mood.value == m) { mood.value = if (mood.value == m) null else m }
-            }
-        }
+        ChipGrid(moods, mood.value, 2) { m -> mood.value = if (mood.value == m) null else m }
         Spacer(Modifier.height(12.dp))
         val ready = genre.value != null || mood.value != null
         PickChip("만들기", ready, Modifier.padding(horizontal = PAGE_GUTTER)) {

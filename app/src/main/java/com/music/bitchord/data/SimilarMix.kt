@@ -49,34 +49,41 @@ object SimilarMix {
     /** Genre chips -> search text and language policy. Korean genres are searched in Korean
      *  (so Korean songs come back); foreign genres are searched in English, Korean-script
      *  songs are filtered out and the YouTube radio is pinned to the given region. */
-    private class GenreSpec(val query: String, val allowKorean: Boolean, val region: String? = null)
+    private class GenreSpec(
+        val query: String,
+        val allowKorean: Boolean,
+        val region: String? = null,
+        val ko: Boolean = false,
+    )
 
     private val GENRES = mapOf(
-        "K-pop" to GenreSpec("K-pop", true),
-        "아이돌" to GenreSpec("아이돌 노래", true),
-        "걸그룹" to GenreSpec("걸그룹 노래", true),
-        "보이그룹" to GenreSpec("보이그룹 노래", true),
-        "발라드" to GenreSpec("한국 발라드", true),
-        "국힙" to GenreSpec("한국 힙합", true),
-        "국알앤비" to GenreSpec("한국 알앤비", true),
-        "인디" to GenreSpec("한국 인디 음악", true),
-        "밴드" to GenreSpec("한국 밴드 음악", true),
-        "OST" to GenreSpec("드라마 OST", true),
-        "트로트" to GenreSpec("트로트", true),
-        "J-pop" to GenreSpec("J-pop", false, "JP"),
-        "J-rock" to GenreSpec("j-rock", false, "JP"),
-        "애니송" to GenreSpec("アニソン", false, "JP"),
-        "시티팝" to GenreSpec("japanese city pop", false, "JP"),
-        "팝송" to GenreSpec("pop", false, "US"),
-        "외힙" to GenreSpec("hip hop", false, "US"),
-        "외알앤비" to GenreSpec("r&b", false, "US"),
-        "외록" to GenreSpec("rock", false, "US"),
-        "외인디" to GenreSpec("indie", false, "US"),
-        "재즈" to GenreSpec("jazz", false, "US"),
-        "로파이" to GenreSpec("lofi", false, "US"),
-        "어쿠스틱" to GenreSpec("acoustic", false, "US"),
-        "EDM" to GenreSpec("edm", false, "US"),
-        "클래식" to GenreSpec("classical", false, "US"),
+        "K-pop" to GenreSpec("K-pop", true, null, true),
+        "아이돌" to GenreSpec("아이돌 노래", true, null, true),
+        "걸그룹" to GenreSpec("걸그룹 노래", true, null, true),
+        "보이그룹" to GenreSpec("보이그룹 노래", true, null, true),
+        "발라드" to GenreSpec("한국 발라드", true, null, true),
+        "국힙" to GenreSpec("한국 힙합", true, null, true),
+        "국알앤비" to GenreSpec("한국 알앤비", true, null, true),
+        "인디" to GenreSpec("한국 인디 음악", true, null, true),
+        "밴드" to GenreSpec("한국 밴드 음악", true, null, true),
+        "국재즈" to GenreSpec("한국 재즈", true, null, true),
+        "국로파이" to GenreSpec("한국 로파이", true, null, true),
+        "OST" to GenreSpec("드라마 OST", true, null, true),
+        "트로트" to GenreSpec("트로트", true, null, true),
+        "J-pop" to GenreSpec("J-pop", false, "JP", false),
+        "J-rock" to GenreSpec("j-rock", false, "JP", false),
+        "애니송" to GenreSpec("アニソン", false, "JP", false),
+        "시티팝" to GenreSpec("japanese city pop", false, "JP", false),
+        "팝송" to GenreSpec("pop", false, "US", false),
+        "외힙" to GenreSpec("hip hop", false, "US", false),
+        "외알앤비" to GenreSpec("r&b", false, "US", false),
+        "외록" to GenreSpec("rock", false, "US", false),
+        "외인디" to GenreSpec("indie", false, "US", false),
+        "재즈" to GenreSpec("jazz", true, null, false),
+        "로파이" to GenreSpec("lofi", true, null, false),
+        "어쿠스틱" to GenreSpec("acoustic", true, null, false),
+        "EDM" to GenreSpec("edm", true, null, false),
+        "클래식" to GenreSpec("classical", true, null, false),
     )
 
     /** Mood chips: English query for foreign genres / mood-only, Korean query next to a Korean genre. */
@@ -100,10 +107,11 @@ object SimilarMix {
 
     private fun searchQuery(keyword: String): String {
         val tokens = keyword.split(' ').filter { it.isNotBlank() }
-        val korean = tokens.any { GENRES[it]?.allowKorean == true }
-        return tokens.joinToString(" ") { t ->
-            GENRES[t]?.query ?: MOODS[t]?.let { if (korean) it.second else it.first } ?: t
+        val ko = tokens.any { GENRES[it]?.ko == true }
+        val base = tokens.joinToString(" ") { t ->
+            GENRES[t]?.query ?: MOODS[t]?.let { if (ko) it.second else it.first } ?: t
         }
+        return base
     }
 
     private class Cand(val song: Song) {
@@ -149,7 +157,7 @@ object SimilarMix {
                 YtMusicRepository.search(searchQuery(kw), SearchFilter.SONGS).getOrNull().orEmpty()
             }.getOrDefault(emptyList()).mapNotNull {
                 (it as? SearchResult.Track)?.song ?: (it as? SearchResult.TopTrack)?.song
-            }.filter { kwAllowsKorean != false || script(it) != 1 }.take(4)
+            }.filter { kwAllowsKorean != false || script(it) != 1 }.take(12).shuffled().take(4)
             else -> {
                 if (history.isEmpty()) return emptyList()
                 val p = script(history[0])
