@@ -431,7 +431,7 @@ object AppSettings {
      * but it is the better default, and most tracks resolve to no canvas at
      * all. See [CanvasRepository][com.music.bitchord.data.canvas.CanvasRepository].
      */
-    val animatedCanvas = MutableStateFlow(true)
+    val animatedCanvas = MutableStateFlow(false)
 
     /**
      * Whether [animatedCanvas] is allowed to actually stream on a metered
