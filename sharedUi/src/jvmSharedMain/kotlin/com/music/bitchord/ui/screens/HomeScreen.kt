@@ -1334,6 +1334,7 @@ fun ShuffleDetailScreen(
     currentSong: Song? = null,
     isPlaying: Boolean = false,
 ) {
+    val showPicker = remember { androidx.compose.runtime.mutableStateOf(false) }
     val title = if (mode == 0) "무작위 셔플" else "장르별 셔플"
     val subtitle = if (mode == 0) "처음 듣는 곡 위주" else "비슷한 곡끼리 이어서"
     LazyColumn(
@@ -1422,8 +1423,25 @@ fun ShuffleDetailScreen(
                 Spacer(Modifier.height(16.dp))
             }
         }
-        if (mode == 1 && songs.isEmpty() && !loading) {
-            item(key = "shuffle_picker") { ShufflePicker(recentSongs, onPickSong, onPickKeyword) }
+        if (mode == 1 && !loading) {
+            if (songs.isNotEmpty()) {
+                item(key = "shuffle_picker_toggle") {
+                    Box(Modifier.padding(horizontal = PAGE_GUTTER, vertical = 4.dp)) {
+                        PickChip(
+                            if (showPicker.value) "장르 선택 닫기" else "장르/분위기 다시 고르기",
+                            showPicker.value,
+                        ) { showPicker.value = !showPicker.value }
+                    }
+                }
+            }
+            if (songs.isEmpty() || showPicker.value) {
+                item(key = "shuffle_picker") {
+                    ShufflePicker(recentSongs, onPickSong) { kw ->
+                        showPicker.value = false
+                        onPickKeyword(kw)
+                    }
+                }
+            }
         } else if (songs.isEmpty()) {
             item(key = "shuffle_empty") {
                 Text(
