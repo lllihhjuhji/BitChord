@@ -1198,8 +1198,8 @@ private fun ShufflePicker(
     onSong: (Song) -> Unit,
     onKeyword: (String) -> Unit,
 ) {
-    val genres = listOf("J-pop", "K-pop", "발라드", "힙합", "트로트", "팝송")
-    val moods = listOf("신나는", "잔잔한", "감성", "운동", "집중", "새벽")
+    val genres = listOf("K-pop", "아이돌", "걸그룹", "보이그룹", "발라드", "국힙", "국알앤비", "인디", "밴드", "OST", "트로트", "J-pop", "J-rock", "애니송", "시티팝", "팝송", "외힙", "외알앤비", "외록", "외인디", "재즈", "로파이", "어쿠스틱", "EDM", "클래식")
+    val moods = listOf("신나는", "잔잔한", "감성", "운동", "집중", "새벽", "비오는날", "드라이브", "공부", "잠들기전", "카페", "퇴근길", "이별", "여행", "파티")
     val genre = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     val mood = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     Column(Modifier.padding(vertical = 4.dp)) {
