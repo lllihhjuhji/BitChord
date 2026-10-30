@@ -2,6 +2,11 @@ name: Android Release APK
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.1). Empty = build-<run number>'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -63,8 +68,9 @@ jobs:
     - name: Publish GitHub Release
       env:
         GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ inputs.version }}
       run: |
-        TAG="build-${{ github.run_number }}"
+        TAG="${VERSION:-build-${{ github.run_number }}}"
         gh release create "$TAG" app/build/outputs/apk/prod/release/*.apk \
           --repo "${{ github.repository }}" \
           --title "BitChord $TAG" \

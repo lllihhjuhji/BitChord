@@ -1442,6 +1442,9 @@ fun ShuffleDetailScreen(
                     }
                 }
             }
+        }
+        if (mode == 1 && songs.isEmpty() && !loading) {
+            // picker is shown above
         } else if (songs.isEmpty()) {
             item(key = "shuffle_empty") {
                 Text(
