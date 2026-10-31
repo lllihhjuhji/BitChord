@@ -505,7 +505,7 @@ object AppSettings {
      * but it is the better default, and most tracks resolve to no canvas at
      * all. See [CanvasRepository][com.music.bitchord.data.canvas.CanvasRepository].
      */
-    val animatedCanvas = MutableStateFlow(true)
+    val animatedCanvas = MutableStateFlow(false)
 
     /**
      * Whether [animatedCanvas] is allowed to actually stream on a metered
@@ -881,6 +881,9 @@ object AppSettings {
      */
     fun init(context: Context, authStore: AuthStore) {
         prefs = context.getSharedPreferences("bitchord_settings", Context.MODE_PRIVATE)
+        com.music.bitchord.data.ArtistAffinity.attach(prefs.getString("artist_affinity", "").orEmpty()) {
+            prefs.edit().putString("artist_affinity", it).apply()
+        }
         this.authStore = authStore
         com.music.bitchord.data.spotify.LocalPlaylistStore.init(context)
         com.music.bitchord.data.OfflinePlaylists.init(
@@ -1873,6 +1876,24 @@ object AppSettings {
         prefs.edit().putString(KEY_DOWNLOADED_MUSIC_VIEW_TYPE, value.name).apply()
     }
 
+    fun similarMixShown(): List<String> =
+        prefs.getString(KEY_SIMILAR_MIX_SHOWN, null)?.split(',')?.filter { it.isNotBlank() }.orEmpty()
+
+    fun setSimilarMixShown(ids: Collection<String>) {
+        prefs.edit().putString(KEY_SIMILAR_MIX_SHOWN, ids.joinToString(",")).apply()
+    }
+
+    fun homeFeedCache(): String? = prefs.getString(KEY_HOME_FEED_CACHE, null)
+
+    fun setHomeFeedCache(json: String) {
+        prefs.edit().putString(KEY_HOME_FEED_CACHE, json).apply()
+    }
+
+    fun setHomeRecentsViewType(value: LibraryViewType) {
+        homeRecentsViewType.value = value
+        prefs.edit().putString(KEY_HOME_RECENTS_VIEW_TYPE, value.name).apply()
+    }
+
     fun setLocalMusicFolderUri(value: String) {
         localMusicFolderUri.value = value
         prefs.edit().putString(KEY_LOCAL_MUSIC_FOLDER_URI, value).apply()
@@ -2208,6 +2229,9 @@ object AppSettings {
     private const val KEY_DETAIL_SONG_SORTS = "detail_song_sorts"
     private const val KEY_LOCAL_MUSIC_VIEW_TYPE = "local_music_view_type"
     private const val KEY_DOWNLOADED_MUSIC_VIEW_TYPE = "downloaded_music_view_type"
+    private const val KEY_HOME_RECENTS_VIEW_TYPE = "home_recents_view_type"
+    private const val KEY_HOME_FEED_CACHE = "home_feed_cache"
+    private const val KEY_SIMILAR_MIX_SHOWN = "similar_mix_shown"
     private const val KEY_LOCAL_MUSIC_FOLDER_URI = "local_music_folder_uri"
     private const val KEY_WEBDAV_URL = "webdav_url"
     private const val KEY_WEBDAV_USERNAME = "webdav_username"

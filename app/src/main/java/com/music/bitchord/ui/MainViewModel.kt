@@ -140,6 +140,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Titles already on screen, so a later page can't repeat a shelf. */
     private val homeSeenTitles = mutableSetOf<String>()
 
+    /** True while Home is showing the saved feed and waiting for the core feed to replace it. */
+    private var homeCached = false
+    private val homeHeld = mutableListOf<Pair<List<HomeShelf>, Boolean>>()
+    private var homeSaveJob: kotlinx.coroutines.Job? = null
+
+    private fun scheduleHomeCacheSave() {
+        val identity = listenerKey()
+        val data = (_home.value as? UiState.Success)?.data ?: return
+        homeSaveJob?.cancel()
+        homeSaveJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            kotlinx.coroutines.delay(1500)
+            HomeFeedCache.save(identity, data)
+        }
+    }
+
     private val _homeLoadingMore = MutableStateFlow(false)
 
     /**
@@ -1702,11 +1717,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun loadHome() {
         val identity = listenerKey()
         val generation = homeLoadGeneration.incrementAndGet()
-        _home.value = UiState.Loading
+        // Paint the last feed for this listener at once; the core feed replaces it
+        // when it lands (see publishHomeShelves).
+        val cached = HomeFeedCache.load(identity)
+        homeCached = cached != null
+        homeHeld.clear()
+        _home.value = if (cached != null) UiState.Success(cached) else UiState.Loading
         homeContinuation = null
         homeSeenTitles.clear()
         _homeLoadingMore.value = false
-        _homeRecentlyPlayedLoading.value = _signedIn.value
+        _homeRecentlyPlayedLoading.value = _signedIn.value && cached == null
         // The core feed plus one browse per supplement. Recently played is left
         // out: it has its own skeleton at the head of the page rather than the
         // one at the tail.
@@ -1719,7 +1739,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         .onSuccess { feed ->
                             if (!isCurrentHomeLoad(identity, generation)) return@onSuccess
                             homeContinuation = feed.continuation
-                            publishHomeShelves(feed.shelves)
+                            publishHomeShelves(feed.shelves, core = true)
                         }
                         .onFailure { failure ->
                             if (isCurrentHomeLoad(identity, generation) && _home.value !is UiState.Success) {
@@ -1858,7 +1878,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun isCurrentHomeLoad(identity: String?, generation: Long) =
         identity == listenerKey() && generation == homeLoadGeneration.get()
 
-    private fun publishHomeShelves(shelves: List<HomeShelf>, prepend: Boolean = false) {
+    private fun publishHomeShelves(shelves: List<HomeShelf>, prepend: Boolean = false, core: Boolean = false) {
+        if (homeCached) {
+            // Saved feed on screen: hold everything except the core feed, then swap
+            // the whole page at once so it never collapses to a single shelf.
+            if (!core) {
+                homeHeld += shelves to prepend
+                return
+            }
+            homeCached = false
+            homeSeenTitles.clear()
+            _home.value = UiState.Success(emptyList())
+            applyHomeShelves(shelves, prepend)
+            val held = homeHeld.toList()
+            homeHeld.clear()
+            held.forEach { (list, pre) -> applyHomeShelves(list, pre) }
+        } else {
+            applyHomeShelves(shelves, prepend)
+        }
+        scheduleHomeCacheSave()
+    }
+
+    private fun applyHomeShelves(shelves: List<HomeShelf>, prepend: Boolean = false) {
         val existing = (_home.value as? UiState.Success)?.data.orEmpty()
         if (prepend) {
             // YouTube's core home can also contain a stale "Recently played"
@@ -1881,13 +1922,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Top Picks keeps to its hour; a pull refreshes the feed, not the
         // picks, unless the hour has already turned over.
         if (topPicksJob?.isActive != true) loadTopPicks(identity, rebuild = false)
-        YtMusicRepository.home().onSuccess { feed ->
+        YtMusicRepository.home(fresh = true).onSuccess { feed ->
             if (identity != listenerKey()) return@onSuccess
             homeContinuation = feed.continuation
             homeSeenTitles.clear()
             val shelves = feed.shelves.withoutRepeatsOf(emptyList())
                 .filter { homeSeenTitles.add(it.title.lowercase(Locale.ROOT)) }
-            if (shelves.isNotEmpty()) _home.value = UiState.Success(shelves)
+            if (shelves.isNotEmpty()) {
+                homeCached = false
+                _home.value = UiState.Success(shelves)
+                scheduleHomeCacheSave()
+            }
         }
         recent?.await()?.onSuccess { shelf ->
             if (identity == listenerKey()) shelf?.let { publishHomeShelves(listOf(it), prepend = true) }
@@ -3541,6 +3586,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun clearListenerState(restoreCached: Boolean = false) {
+        YtMusicRepository.invalidateBrowseCache()
         _account.value = null
         likedSyncJob?.cancel()
         LikeState.clear()

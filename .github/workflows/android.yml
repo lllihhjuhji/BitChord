@@ -1,9 +1,19 @@
 name: Android Release APK
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.1). Empty = build-<run number>'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
 
 jobs:
   build-prod-release:
@@ -54,3 +64,15 @@ jobs:
       with:
         name: bitchord-wear-prod-release-signed
         path: wearos/build/outputs/apk/prod/release/*.apk
+
+    - name: Publish GitHub Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        TAG="${VERSION:-build-${{ github.run_number }}}"
+        gh release create "$TAG" app/build/outputs/apk/prod/release/*.apk \
+          --repo "${{ github.repository }}" \
+          --title "BitChord $TAG" \
+          --notes "Auto-built from ${{ github.sha }}" \
+          --latest

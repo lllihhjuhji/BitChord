@@ -1,0 +1,58 @@
+name: Sync upstream
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+  issues: write
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/kushagrasinghx/BitChord.git
+          git fetch upstream --tags
+          if [ "$(git rev-list --count HEAD..upstream/main)" = "0" ]; then
+            echo "No new upstream commits"
+            exit 0
+          fi
+
+          OLD=$(git rev-parse HEAD)
+          if ! git merge upstream/main --no-commit --no-ff; then
+            CONFLICTS=$(git diff --name-only --diff-filter=U | grep -v '^\.github/workflows/' || true)
+            if [ -n "$CONFLICTS" ]; then
+              git merge --abort
+              gh label create sync-conflict --color B60205 --force >/dev/null 2>&1 || true
+              if [ "$(gh issue list --label sync-conflict --state open --json number -q length)" = "0" ]; then
+                gh issue create --label sync-conflict \
+                  --title "Upstream sync conflict" \
+                  --body "Upstream has new commits that conflict with this fork. Merge by hand, push, then close this issue.
+
+          Conflicting files:
+          $CONFLICTS"
+              fi
+              echo "Conflicts found, stopped."
+              exit 0
+            fi
+          fi
+
+          # The bot token cannot change workflow files, so keep ours.
+          git rm -rf -q --ignore-unmatch .github/workflows
+          git checkout "$OLD" -- .github/workflows
+          git commit --no-edit
+          git push origin HEAD
+
+          gh workflow run android.yml --repo "${{ github.repository }}"

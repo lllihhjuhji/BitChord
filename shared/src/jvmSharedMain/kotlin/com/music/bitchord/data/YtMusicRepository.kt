@@ -1,5 +1,6 @@
 package com.music.bitchord.data
 
+import kotlin.random.Random
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.innertube.Innertube
 import com.music.bitchord.data.innertube.InnertubeParser
@@ -75,8 +76,8 @@ object YtMusicRepository {
      * shelves the same way the official app does as you scroll; signed out
      * it's empty and there's nothing more to fetch.
      */
-    suspend fun home(): Result<HomeFeed> = call("home") {
-        val home = Innertube.browse("FEmusic_home")
+    suspend fun home(fresh: Boolean = false): Result<HomeFeed> = call("home") {
+        val home = cachedBrowse("FEmusic_home", HOME_TTL_MS, fresh)
         HomeFeed(InnertubeParser.parseHome(home), InnertubeParser.continuationToken(home))
     }
 
@@ -201,7 +202,7 @@ object YtMusicRepository {
      * Recommended discovery tracks for Quick Picks, strictly excluding listening history and recents.
      */
     suspend fun quickPicks(excludeSongIds: Set<String> = emptySet()): Result<List<Song>> = call("quickPicks") {
-        val homeRaw = runCatching { Innertube.browse("FEmusic_home") }.getOrNull()
+        val homeRaw = runCatching { cachedBrowse("FEmusic_home", HOME_TTL_MS) }.getOrNull()
         val shelves = if (homeRaw != null) InnertubeParser.parseHome(homeRaw) else emptyList()
 
         // 1. Direct "Quick picks" or "Mix" or "Recommendations" shelf
@@ -285,6 +286,156 @@ object YtMusicRepository {
         allHomeTrackSongs.ifEmpty { exploreSongs }
     }
 
+    /**
+     * Discovery mix: tracks the account has not played, from artists it does not
+     * already lean on, ranked by how it has treated each artist before
+     * ([ArtistAffinity]) and widened with artists related to the ones it plays most.
+     * A few familiar tracks are folded in so the queue does not feel foreign.
+     */
+    suspend fun discoverMix(
+        size: Int = 40,
+        familiarRatio: Float = 0.3f,
+        maxPerArtist: Int = 2,
+        heavyArtistPlays: Int = 3,
+        seedArtists: Int = 5,
+        relatedPerSeed: Int = 3,
+        excludeSongIds: Set<String> = emptySet(),
+    ): Result<List<Song>> = call("discoverMix") {
+        val dislikeLimit = -3f
+
+        val history = if (Innertube.cookie != null) {
+            runCatching { fetchHistory() }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        val playedIds = history.mapTo(HashSet()) { it.videoId }.apply { addAll(excludeSongIds) }
+        val heavyArtists = history
+            .groupingBy { ArtistAffinity.key(it.artist) }
+            .eachCount()
+            .filterValues { it >= heavyArtistPlays }
+            .keys
+        val seedIds = history
+            .mapNotNull { it.artistId }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .take(seedArtists)
+            .map { it.key }
+        val seedSet = seedIds.toSet()
+
+        val gathered = coroutineScope {
+            val home = async { runCatching { shelvesOf("FEmusic_home") }.getOrDefault(emptyList()) }
+            val explore = async { runCatching { shelvesOf("FEmusic_explore") }.getOrDefault(emptyList()) }
+            val fresh = async { runCatching { shelvesOf("FEmusic_new_releases") }.getOrDefault(emptyList()) }
+            val related = async {
+                runCatching { relatedSongs(seedIds, seedSet, relatedPerSeed) }.getOrDefault(emptyList())
+            }
+            discoverySongs(home.await(), 1.5f) +
+                discoverySongs(explore.await(), 0.5f) +
+                discoverySongs(fresh.await(), 0f) +
+                related.await().map { it to 1.0f }
+        }
+
+        val candidates = gathered
+            .distinctBy { it.first.videoId }
+            .filter { it.first.videoId !in playedIds }
+            .filter { ArtistAffinity.score(it.first.artist) > dislikeLimit }
+
+        // Score once per song: a random key inside the comparator breaks sorting.
+        fun rank(pool: List<Pair<Song, Float>>): List<Song> =
+            pool.map { (s, w) -> s to (w + ArtistAffinity.score(s.artist) + Random.nextFloat() * 2f) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+
+        val familiarCount = if (history.size > 5) (size * familiarRatio).toInt() else 0
+        val discoveryTarget = size - familiarCount
+
+        val strict = rank(
+            candidates.filter { (s, _) ->
+                ArtistAffinity.key(s.artist) !in heavyArtists && (s.artistId ?: "") !in seedSet
+            },
+        )
+        val relaxed = rank(candidates) // fallback when strict runs dry
+
+        val discovery = ArrayList<Song>()
+        val perArtist = HashMap<String, Int>()
+        val seen = HashSet<String>()
+        for (s in strict + relaxed) {
+            if (discovery.size >= discoveryTarget) break
+            val key = s.artistId ?: ArtistAffinity.key(s.artist)
+            val n = perArtist[key] ?: 0
+            if (n >= maxPerArtist) continue
+            if (!seen.add(s.videoId)) continue
+            perArtist[key] = n + 1
+            discovery += s
+        }
+
+        // Skip the newest few so the track that is playing right now isn't replayed.
+        val familiar = history.drop(5).shuffled().take(familiarCount)
+        val step = if (familiar.isEmpty()) Int.MAX_VALUE
+        else (discovery.size / (familiar.size + 1)).coerceAtLeast(1)
+
+        val out = ArrayList<Song>(size)
+        val familiarIt = familiar.iterator()
+        discovery.forEachIndexed { i, s ->
+            out += s
+            if ((i + 1) % step == 0 && familiarIt.hasNext()) out += familiarIt.next()
+        }
+        while (familiarIt.hasNext()) out += familiarIt.next()
+        out.distinctBy { it.videoId }
+    }
+
+    /** Top songs of artists related to [seedIds], skipping the seeds themselves. */
+    private suspend fun relatedSongs(
+        seedIds: List<String>,
+        seedSet: Set<String>,
+        perSeed: Int,
+    ): List<Song> = coroutineScope {
+        val relatedIds = seedIds
+            .map { id -> async { artistPage(id).getOrNull() } }
+            .awaitAll()
+            .flatMap { page -> page?.let { relatedArtistIds(it) }.orEmpty().shuffled().take(perSeed) }
+            .distinct()
+            .filter { it !in seedSet }
+        relatedIds
+            .map { id -> async { artistPage(id).getOrNull()?.songs.orEmpty().take(4) } }
+            .awaitAll()
+            .flatten()
+    }
+
+    /**
+     * Artist cards on an artist page ("Fans might also like"): a shelf made only of
+     * channel-id browse targets with no track in it. Language-independent.
+     */
+    private fun relatedArtistIds(page: ArtistPage): List<String> =
+        page.sections
+            .filter { shelf ->
+                shelf.items.isNotEmpty() &&
+                    shelf.items.all { it.videoId == null && it.browseId?.startsWith("UC") == true }
+            }
+            .flatMap { shelf -> shelf.items.mapNotNull { it.browseId } }
+
+    private fun discoverySongs(shelves: List<HomeShelf>, weight: Float): List<Pair<Song, Float>> =
+        shelves
+            .filterNot {
+                it.title.contains("recent", ignoreCase = true) ||
+                    it.title.contains("history", ignoreCase = true) ||
+                    it.title.contains("listen again", ignoreCase = true)
+            }
+            .flatMap { shelf ->
+                shelf.items.mapNotNull { item ->
+                    item.videoId?.let { vid ->
+                        Song(
+                            videoId = vid,
+                            title = item.title,
+                            artist = InnertubeParser.artistFromSubtitle(item.subtitle),
+                            thumbnailUrl = item.thumbnailUrl,
+                        ) to weight
+                    }
+                }
+            }
+
     private const val HISTORY = "FEmusic_history"
     private const val RECENT_TITLE = "Recents"
 
@@ -292,7 +443,52 @@ object YtMusicRepository {
     private const val RECENT_LIMIT = 20
 
     private suspend fun shelvesOf(browseId: String): List<HomeShelf> =
-        InnertubeParser.parseHome(Innertube.browse(browseId))
+        InnertubeParser.parseHome(cachedBrowse(browseId, if (browseId == "FEmusic_home") HOME_TTL_MS else SUPPLEMENT_TTL_MS))
+
+    // ---- Short-lived browse cache ------------------------------------------
+
+    private const val HOME_TTL_MS = 20_000L
+    private const val SUPPLEMENT_TTL_MS = 300_000L
+
+    private class BrowseEntry(
+        val at: Long,
+        val value: kotlinx.coroutines.Deferred<kotlinx.serialization.json.JsonObject>,
+    )
+
+    private val browseScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    )
+    private val browseCache = HashMap<String, BrowseEntry>()
+
+    /** Dropped on sign-in, sign-out and profile switches so nobody sees another listener feed. */
+    fun invalidateBrowseCache() = synchronized(browseCache) { browseCache.clear() }
+
+    /**
+     * One browse per [browseId] at a time, reused for [ttlMs]. A request already in
+     * flight is shared instead of repeated, and a failed one is never kept.
+     */
+    private suspend fun cachedBrowse(
+        browseId: String,
+        ttlMs: Long,
+        fresh: Boolean = false,
+    ): kotlinx.serialization.json.JsonObject {
+        val key = "$browseId|${Innertube.cookie?.hashCode() ?: 0}|${Innertube.currentLocaleTag}"
+        val entry = synchronized(browseCache) {
+            if (fresh) browseCache.remove(key)
+            val now = System.currentTimeMillis()
+            browseCache[key]?.takeIf { now - it.at < ttlMs }
+                ?: BrowseEntry(now, browseScope.async { Innertube.browse(browseId) })
+                    .also { browseCache[key] = it }
+        }
+        return try {
+            entry.value.await()
+        } catch (e: Throwable) {
+            // The caller giving up must not throw away a request others are waiting on.
+            if (e is CancellationException && entry.value.isActive) throw e
+            synchronized(browseCache) { if (browseCache[key] === entry) browseCache.remove(key) }
+            throw e
+        }
+    }
 
     /** The server-defined mood and genre categories used by Explore. */
     suspend fun moodAndGenres(): Result<List<MoodGenreSection>> = call("moods-and-genres") {
@@ -634,9 +830,12 @@ object YtMusicRepository {
      * [preferVideo] takes each song YouTube pairs with its music video as the
      * video — a station played on from a video stays videos.
      */
-    suspend fun radio(videoId: String, preferVideo: Boolean = false): Result<List<Song>> =
-        call("radio:$videoId:$preferVideo") {
-            InnertubeParser.parseWatchQueue(Innertube.next(videoId), preferVideo = preferVideo)
+    suspend fun radio(videoId: String, region: String? = null, preferVideo: Boolean = false): Result<List<Song>> =
+        call("radio:$videoId:${region.orEmpty()}:$preferVideo") {
+            InnertubeParser.parseWatchQueue(
+                if (region == null) Innertube.next(videoId) else Innertube.next(videoId, region = region),
+                preferVideo = preferVideo,
+            )
         }
 
     /**

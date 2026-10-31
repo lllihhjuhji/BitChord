@@ -1,5 +1,7 @@
 package com.music.bitchord.ui.screens
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import com.music.bitchord.ui.components.trackArtSize
 import com.music.bitchord.ui.components.contextClick
 import com.music.bitchord.ui.AppUi
@@ -44,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import com.music.bitchord.data.settings.LibraryViewType
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cached
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
@@ -145,6 +149,16 @@ fun HomeScreen(
     leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
+    shuffleSongs: List<Song> = emptyList(),
+    shuffleLoading: Boolean = false,
+    onShufflePlay: ((Int) -> Unit)? = null,
+    onShuffleRefresh: (() -> Unit)? = null,
+    shuffleMode: Int = 0,
+    onShuffleMode: ((Int) -> Unit)? = null,
+    shuffleRecent: List<Song> = emptyList(),
+    onShufflePickSong: ((Song) -> Unit)? = null,
+    onShuffleKeyword: ((String) -> Unit)? = null,
+    onShuffleOpen: ((Int) -> Unit)? = null,
     /**
      * The "Top Picks for You" row above Recents. Null while it has not been
      * built yet, empty when there is nothing to pick from. The row is only
@@ -163,6 +177,7 @@ fun HomeScreen(
     /** Whether the Top Picks and mood artwork may animate — see [LocalArtworkMotion]. */
     artworkMotion: Boolean = true,
 ) {
+    val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
     // Top Picks' pictures and motion wait for the feed — see LocalArtworkImages.
     val feedReady = state !is UiState.Loading
     CompositionLocalProvider(
@@ -251,6 +266,35 @@ fun HomeScreen(
                         currentSong = currentSong,
                         isPlaying = isPlaying,
                         firstIsHero = leadHero && !recentlyPlayedLoading,
+                        afterFirst = {
+                            if (!recentlyPlayedLoading && onShufflePlay != null) {
+                                shuffleSection(
+                                    songs = shuffleSongs,
+                                    loading = shuffleLoading,
+                                    mode = shuffleMode,
+                                    onMode = { onShuffleMode?.invoke(it) },
+                                    onOpen = { onShuffleOpen?.invoke(it) },
+                                    coverPool = state.data.flatMap { it.items }.mapNotNull { it.thumbnailUrl }.distinct(),
+                                    recentSongs = shuffleRecent,
+                                    onPickSong = { onShufflePickSong?.invoke(it) },
+                                    onPickKeyword = { onShuffleKeyword?.invoke(it) },
+                                    currentSong = currentSong,
+                                    isPlaying = isPlaying,
+                                    onPlay = onShufflePlay,
+                                    onRefresh = { onShuffleRefresh?.invoke() },
+                                )
+                            }
+                        },
+                        recentsViewType = recentsViewType,
+                        onRecentsViewTypeToggle = {
+                            AppUi.host.setHomeRecentsViewType(
+                                if (recentsViewType == LibraryViewType.LIST) {
+                                    LibraryViewType.GRID
+                                } else {
+                                    LibraryViewType.LIST
+                                },
+                            )
+                        },
                     )
                     if (loadingMore) feedMoreSkeleton()
                 }
@@ -292,9 +336,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
     currentSong: Song?,
     isPlaying: Boolean,
     firstIsHero: Boolean = true,
+    recentsViewType: LibraryViewType,
+    onRecentsViewTypeToggle: () -> Unit,
+    afterFirst: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {},
     onMoodClick: ((TopPickMood, String) -> Unit)? = null,
     onMoodsShowAll: () -> Unit = {},
 ) {
+    // Shuffle leads the page; the shelves (Recents first) follow it.
+    afterFirst(this)
     shelves.forEachIndexed { index, shelf ->
         // Find Your Mood follows the lead shelf, as on Apple Music's Home.
         if (index == 1 && onMoodClick != null) {
@@ -1144,5 +1193,362 @@ internal fun ShelfCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+internal fun androidx.compose.foundation.lazy.LazyListScope.shuffleSection(
+    songs: List<Song>,
+    loading: Boolean,
+    mode: Int,
+    onMode: (Int) -> Unit,
+    recentSongs: List<Song>,
+    onPickSong: (Song) -> Unit,
+    onPickKeyword: (String) -> Unit,
+    currentSong: Song?,
+    isPlaying: Boolean,
+    onPlay: (Int) -> Unit,
+    onRefresh: () -> Unit,
+    onOpen: (Int) -> Unit = {},
+    coverPool: List<String> = emptyList(),
+) {
+    item(key = "shuffle_cards") {
+        // Cards always show four random covers from the feed, whatever the mix holds.
+        val picks = remember(coverPool.isNotEmpty()) { coverPool.shuffled() }
+        val firstCovers = picks.take(4)
+        val secondCovers = if (picks.size >= 8) picks.subList(4, 8) else picks.asReversed().take(4)
+        Column(Modifier.padding(bottom = 26.dp)) {
+            SectionHeader("셔플", "")
+            ShelfRow(
+                contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item(key = "shuffle_random") {
+                    ShuffleCard(
+                        title = "무작위 셔플",
+                        subtitle = "처음 듣는 곡 위주",
+                        covers = firstCovers,
+                        onClick = { onOpen(0) },
+                    )
+                }
+                item(key = "shuffle_genre") {
+                    ShuffleCard(
+                        title = "장르별 셔플",
+                        subtitle = "비슷한 곡끼리 이어서",
+                        covers = secondCovers,
+                        onClick = { onOpen(1) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PickLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun PickChip(
+    label: String,
+    on: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge,
+        color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    )
+}
+
+@Composable
+private fun ChipGrid(items: List<String>, selected: String?, rows: Int, onPick: (String) -> Unit) {
+    val per = (items.size + rows - 1) / rows
+    Column(
+        Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = PAGE_GUTTER),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.chunked(per).forEach { line ->
+            androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                line.forEach { label -> PickChip(label, selected == label) { onPick(label) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShufflePicker(
+    recent: List<Song>,
+    onSong: (Song) -> Unit,
+    onKeyword: (String) -> Unit,
+) {
+    val genres = listOf("K-pop", "아이돌", "걸그룹", "보이그룹", "발라드", "국힙", "국알앤비", "인디", "밴드", "국재즈", "국로파이", "OST", "트로트", "J-pop", "J-rock", "애니송", "시티팝", "팝송", "외힙", "외알앤비", "외록", "외인디", "재즈", "로파이", "어쿠스틱", "EDM", "클래식")
+    val moods = listOf("신나는", "잔잔한", "감성", "운동", "집중", "새벽", "비오는날", "드라이브", "공부", "잠들기전", "카페", "퇴근길", "이별", "여행", "파티")
+    val genre = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val mood = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    Column(Modifier.padding(vertical = 4.dp)) {
+        if (recent.isNotEmpty()) {
+            PickLabel("곡으로 시작")
+            androidx.compose.foundation.lazy.LazyRow(
+                contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(recent) { s ->
+                    PickChip(s.title, false, Modifier.width(150.dp)) { onSong(s) }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        PickLabel("장르")
+        ChipGrid(genres, genre.value, 3) { g -> genre.value = if (genre.value == g) null else g }
+        Spacer(Modifier.height(10.dp))
+        PickLabel("분위기")
+        ChipGrid(moods, mood.value, 2) { m -> mood.value = if (mood.value == m) null else m }
+        Spacer(Modifier.height(12.dp))
+        val ready = genre.value != null || mood.value != null
+        PickChip("만들기", ready, Modifier.padding(horizontal = PAGE_GUTTER)) {
+            if (ready) onKeyword(listOfNotNull(genre.value, mood.value).joinToString(" "))
+        }
+    }
+}
+
+
+@Composable
+private fun ShuffleCard(
+    title: String,
+    subtitle: String,
+    covers: List<String?>,
+    onClick: () -> Unit,
+) {
+    Column(Modifier.width(SHELF_CARD_WIDTH).clickable(onClick = onClick)) {
+        ShuffleCover(
+            covers = covers,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** 2x2 collage when there are four covers, a single cover for fewer, an icon for none. */
+@Composable
+private fun ShuffleCover(covers: List<String?>, modifier: Modifier = Modifier) {
+    val urls = covers.filterNotNull().distinct()
+    Box(
+        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            urls.size >= 4 -> Column(Modifier.fillMaxSize()) {
+                for (row in 0..1) {
+                    Row(Modifier.weight(1f).fillMaxWidth()) {
+                        for (col in 0..1) {
+                            AsyncImage(
+                                model = urls[row * 2 + col].artworkAt(CARD_ART_PX),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.weight(1f).fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+            urls.isNotEmpty() -> AsyncImage(
+                model = urls[0].artworkAt(CARD_ART_PX),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            else -> Icon(
+                imageVector = Icons.Rounded.LibraryMusic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(34.dp),
+            )
+        }
+    }
+}
+
+/** The page a shuffle card opens: cover, play / refresh buttons, then the track list. */
+@Composable
+fun ShuffleDetailScreen(
+    mode: Int,
+    songs: List<Song>,
+    loading: Boolean,
+    recentSongs: List<Song>,
+    onPickSong: (Song) -> Unit,
+    onPickKeyword: (String) -> Unit,
+    onPlay: (Int) -> Unit,
+    onRefresh: () -> Unit,
+    onBack: () -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+    currentSong: Song? = null,
+    isPlaying: Boolean = false,
+) {
+    val showPicker = remember { androidx.compose.runtime.mutableStateOf(false) }
+    val title = if (mode == 0) "무작위 셔플" else "장르별 셔플"
+    val subtitle = if (mode == 0) "처음 듣는 곡 위주" else "비슷한 곡끼리 이어서"
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+    ) {
+        item(key = "shuffle_back") {
+            Text(
+                text = "←",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier
+                    .padding(horizontal = PAGE_GUTTER - 8.dp, vertical = 4.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onBack)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
+        item(key = "shuffle_head") {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                ShuffleCover(
+                    covers = songs.map { it.thumbnailUrl },
+                    modifier = Modifier.fillMaxWidth(0.78f).aspectRatio(1f).clip(RoundedCornerShape(16.dp)),
+                )
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Text(
+                    text = if (songs.isNotEmpty()) "$subtitle · ${songs.size}곡" else subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { if (!loading) onRefresh() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Cached,
+                            contentDescription = "새로고침",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable { if (songs.isNotEmpty()) onPlay(0) },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "재생",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+        if (mode == 1 && !loading) {
+            if (songs.isNotEmpty()) {
+                item(key = "shuffle_picker_toggle") {
+                    Box(Modifier.padding(horizontal = PAGE_GUTTER, vertical = 4.dp)) {
+                        PickChip(
+                            if (showPicker.value) "장르 선택 닫기" else "장르/분위기 다시 고르기",
+                            showPicker.value,
+                        ) { showPicker.value = !showPicker.value }
+                    }
+                }
+            }
+            if (songs.isEmpty() || showPicker.value) {
+                item(key = "shuffle_picker") {
+                    ShufflePicker(recentSongs, onPickSong) { kw ->
+                        showPicker.value = false
+                        onPickKeyword(kw)
+                    }
+                }
+            }
+        }
+        if (mode == 1 && songs.isEmpty() && !loading) {
+            // picker is shown above
+        } else if (songs.isEmpty()) {
+            item(key = "shuffle_empty") {
+                Text(
+                    text = if (loading) "만드는 중…" else "곡을 찾지 못했어",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 12.dp),
+                )
+            }
+        } else {
+            items(songs.size, key = { "shuffle_row_$it" }) { i ->
+                val s = songs[i]
+                Box(Modifier.padding(horizontal = PAGE_GUTTER)) {
+                    CompactTrackRow(
+                        title = s.title,
+                        subtitle = s.artist,
+                        thumbnailUrl = s.thumbnailUrl,
+                        onClick = { onPlay(i) },
+                        onLongPress = null,
+                        isCurrent = currentSong?.videoId == s.videoId,
+                        isPlaying = isPlaying && currentSong?.videoId == s.videoId,
+                    )
+                }
+            }
+        }
     }
 }
